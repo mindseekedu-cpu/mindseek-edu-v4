@@ -22,7 +22,8 @@
     "nodemailer": "^6.9.13",
     "nodemailer-sendgrid": "^1.0.3",
     "midtrans-client": "^1.4.2",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "jose": "^5.2.0"
   },
   "devDependencies": {
     "eslint": "^8.57.0",
