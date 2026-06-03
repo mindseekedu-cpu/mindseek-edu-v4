@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/router';
+import ParentReport from '../../components/ParentReport';
 
 function formatSubscriptionTier(tier) {
   if (!tier) return 'Gratis';
@@ -12,19 +12,15 @@ function formatSubscriptionTier(tier) {
 
 function getRemainingDays(expiresAt) {
   if (!expiresAt) return null;
-
   const now = new Date();
   const expiry = new Date(expiresAt);
   const diffMs = expiry.getTime() - now.getTime();
-
   if (Number.isNaN(expiry.getTime())) return null;
   if (diffMs <= 0) return 0;
-
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
 export default function ParentDashboardPage() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [parent, setParent] = useState(null);
@@ -81,9 +77,25 @@ export default function ParentDashboardPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!parent?.subscription_tier) return;
+
+    const subscriptionTier = String(parent.subscription_tier).toLowerCase();
+    window.localStorage.setItem('package', subscriptionTier);
+    window.localStorage.setItem('packageType', subscriptionTier);
+    window.localStorage.setItem('package_type', subscriptionTier);
+    window.localStorage.setItem('plan', subscriptionTier);
+    window.localStorage.setItem('planType', subscriptionTier);
+    window.localStorage.setItem('plan_type', subscriptionTier);
+  }, [parent]);
+
   const remainingDays = useMemo(() => {
     return getRemainingDays(parent?.subscription_expires_at);
   }, [parent]);
+
+  const activeStudent = useMemo(() => {
+    return students.find((student) => String(student.id) === String(activeStudentId)) || null;
+  }, [students, activeStudentId]);
 
   async function handleSelectStudent(student) {
     const value = String(student.id);
@@ -95,7 +107,6 @@ export default function ParentDashboardPage() {
     const confirmed = window.confirm(
       `Hapus siswa ${student.student_name}? Data tidak akan tampil lagi di dashboard.`
     );
-
     if (!confirmed) return;
 
     try {
@@ -139,10 +150,9 @@ export default function ParentDashboardPage() {
               Halo, {parent?.name || 'Parent'}
             </h1>
             <p className="mt-2 text-sm text-slate-600">
-              Kelola data siswa Anda dan pilih siswa aktif untuk melanjutkan pembelajaran.
+              Kelola data siswa Anda, pilih siswa aktif, lalu pantau laporan belajar dan Auto-Pilot.
             </p>
           </div>
-
           <Link
             href="/parent/students/add"
             className="inline-flex items-center justify-center rounded-xl bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700"
@@ -162,14 +172,12 @@ export default function ParentDashboardPage() {
             <p className="text-sm text-slate-500">Jumlah siswa aktif</p>
             <p className="mt-2 text-3xl font-bold text-slate-900">{students.length}</p>
           </div>
-
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <p className="text-sm text-slate-500">Paket berlangganan</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">
               {formatSubscriptionTier(parent?.subscription_tier)}
             </p>
           </div>
-
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <p className="text-sm text-slate-500">Sisa masa aktif</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">
@@ -215,14 +223,12 @@ export default function ParentDashboardPage() {
                         <p className="mt-1 text-sm text-slate-600">Kelas {student.grade}</p>
                         <p className="mt-1 text-sm text-slate-500">Student ID: {student.student_id}</p>
                       </div>
-
                       {isActive ? (
                         <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">
                           Aktif
                         </span>
                       ) : null}
                     </div>
-
                     <div className="mt-5 flex flex-wrap gap-3">
                       <button
                         type="button"
@@ -231,14 +237,12 @@ export default function ParentDashboardPage() {
                       >
                         Pilih
                       </button>
-
                       <Link
                         href={`/parent/students/edit/${student.id}`}
                         className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                       >
                         Edit
                       </Link>
-
                       <button
                         type="button"
                         onClick={() => handleDeleteStudent(student)}
@@ -252,6 +256,44 @@ export default function ParentDashboardPage() {
                 );
               })}
             </div>
+          )}
+        </div>
+
+        <div className="mt-10 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="mb-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Laporan & Auto-Pilot</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Ringkasan belajar, konsistensi, topik terulang, catatan Ai Mi, dan kontrol Auto-Pilot untuk siswa aktif.
+              </p>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-200">
+              {activeStudent ? (
+                <>
+                  Siswa aktif: <span className="font-semibold text-slate-900">{activeStudent.student_name}</span>
+                </>
+              ) : (
+                'Belum ada siswa aktif dipilih'
+              )}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="rounded-2xl bg-slate-50 p-6 text-sm text-slate-600 ring-1 ring-slate-200">
+              Menyiapkan laporan siswa...
+            </div>
+          ) : students.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+              <p className="text-base font-medium text-slate-800">
+                Tambahkan siswa terlebih dahulu untuk melihat laporan belajar.
+              </p>
+            </div>
+          ) : !activeStudentId ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
+              Pilih salah satu siswa sebagai siswa aktif untuk membuka laporan Parent Report.
+            </div>
+          ) : (
+            <ParentReport studentId={activeStudentId} />
           )}
         </div>
       </div>
