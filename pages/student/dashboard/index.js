@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 
+function formatAnonRankIcon(rank) {
+  if (rank === 1) return '⭐ 👑'
+  if (rank === 2) return '👑'
+  if (rank === 3) return '👑'
+  return ''
+}
+
 export default function StudentDashboardPage() {
   const router = useRouter()
 
@@ -17,6 +24,10 @@ export default function StudentDashboardPage() {
 
   const [chatLoading, setChatLoading] = useState(false)
   const [chatResponse, setChatResponse] = useState('')
+
+  const [leaderboard, setLeaderboard] = useState([])
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false)
+  const [leaderboardError, setLeaderboardError] = useState('')
 
   const loadProfile = async () => {
     try {
@@ -48,6 +59,30 @@ export default function StudentDashboardPage() {
     }
   }
 
+  const loadLeaderboard = async (studentGrade) => {
+    const g = String(studentGrade || '').trim()
+    if (!g) return
+
+    setLeaderboardLoading(true)
+    setLeaderboardError('')
+
+    try {
+      const response = await fetch(`/api/student/leaderboard?grade=${encodeURIComponent(g)}&limit=5`)
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal memuat leaderboard')
+      }
+
+      setLeaderboard(Array.isArray(result.data) ? result.data : [])
+    } catch (err) {
+      setLeaderboard([])
+      setLeaderboardError(err.message || 'Gagal memuat leaderboard')
+    } finally {
+      setLeaderboardLoading(false)
+    }
+  }
+
   useEffect(() => {
     const init = async () => {
       setLoading(true)
@@ -63,7 +98,17 @@ export default function StudentDashboardPage() {
     }
 
     init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!profile?.grade && profile?.grade !== 0) return
+    const g = String(profile.grade).trim()
+    if (!g) return
+
+    loadLeaderboard(g)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.grade])
 
   const handleLogout = async () => {
     try {
@@ -111,6 +156,9 @@ export default function StudentDashboardPage() {
       setQuestionText('')
 
       await Promise.all([loadProfile(), loadRecentChats()])
+      if (profile?.grade || profile?.grade === 0) {
+        await loadLeaderboard(String(profile.grade))
+      }
     } catch (err) {
       setError(err.message || 'Gagal mengirim pertanyaan')
     } finally {
@@ -134,9 +182,7 @@ export default function StudentDashboardPage() {
         <div className="flex items-center justify-between rounded-lg bg-white p-6 shadow">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Dashboard Siswa</h1>
-            <p className="mt-1 text-sm text-gray-600">
-              Selamat datang, {profile?.name || 'Siswa'}
-            </p>
+            <p className="mt-1 text-sm text-gray-600">Selamat datang, {profile?.name || 'Siswa'}</p>
           </div>
           <button
             onClick={handleLogout}
@@ -168,7 +214,7 @@ export default function StudentDashboardPage() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 rounded-lg bg-white p-6 shadow">
+          <div className="rounded-lg bg-white p-6 shadow lg:col-span-2">
             <h2 className="text-xl font-semibold text-gray-900">AI Study Chat</h2>
             <p className="mt-1 text-sm text-gray-600">
               Tanyakan soalmu dan dapatkan bantuan langkah demi langkah.
@@ -177,9 +223,7 @@ export default function StudentDashboardPage() {
             {chatResponse ? (
               <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
                 <p className="mb-2 text-sm font-medium text-blue-700">Respons AI</p>
-                <div className="whitespace-pre-wrap text-sm leading-6 text-gray-800">
-                  {chatResponse}
-                </div>
+                <div className="whitespace-pre-wrap text-sm leading-6 text-gray-800">{chatResponse}</div>
               </div>
             ) : null}
 
@@ -208,7 +252,7 @@ export default function StudentDashboardPage() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Grade</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Grade (untuk konteks)</label>
                   <input
                     type="text"
                     value={grade}
@@ -253,30 +297,98 @@ export default function StudentDashboardPage() {
             </form>
           </div>
 
-          <div className="rounded-lg bg-white p-6 shadow">
-            <h2 className="text-xl font-semibold text-gray-900">Recent Chats</h2>
-            <div className="mt-4 space-y-3">
-              {recentChats.length > 0 ? (
-                recentChats.map((chat) => (
-                  <div key={chat.id} className="rounded-lg border border-gray-200 p-4">
-                    <p className="text-sm font-medium text-gray-900">{chat.topic || '-'}</p>
-                    <p className="mt-1 text-xs text-gray-500">{chat.mode || '-'}</p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {chat.started_at
-                        ? new Date(chat.started_at).toLocaleString('id-ID')
-                        : '-'}
-                    </p>
-                    <p className="mt-2 text-xs text-gray-600">
-                      XP: {chat.total_xp_earned ?? 0} ·{' '}
-                      {chat.is_completed ? 'Selesai' : 'Berlangsung'}
-                    </p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-gray-500">Belum ada sesi chat.</p>
-              )}
+          <div className="space-y-6">
+            <div className="rounded-lg bg-white p-6 shadow">
+              <h2 className="text-xl font-semibold text-gray-900">Recent Chats</h2>
+              <div className="mt-4 space-y-3">
+                {recentChats.length > 0 ? (
+                  recentChats.map((chat) => (
+                    <div key={chat.id} className="rounded-lg border border-gray-200 p-4">
+                      <p className="text-sm font-medium text-gray-900">{chat.topic || '-'}</p>
+                      <p className="mt-1 text-xs text-gray-500">{chat.mode || '-'}</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {chat.started_at ? new Date(chat.started_at).toLocaleString('id-ID') : '-'}
+                      </p>
+                      <p className="mt-2 text-xs text-gray-600">
+                        XP: {chat.total_xp_earned ?? 0} · {chat.is_completed ? 'Selesai' : 'Berlangsung'}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">Belum ada sesi chat.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white p-6 shadow">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Leaderboard Mingguan</h2>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Top 5 grade: <span className="font-semibold">{profile?.grade ?? '-'}</span> (min 5 soal)
+                  </p>
+                </div>
+                <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                  7 hari
+                </div>
+              </div>
+
+              {leaderboardError ? (
+                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  {leaderboardError}
+                </div>
+              ) : null}
+
+              <div className="mt-4 space-y-3">
+                {leaderboardLoading ? (
+                  <p className="text-sm text-gray-500">Memuat leaderboard...</p>
+                ) : leaderboard.length === 0 ? (
+                  <p className="text-sm text-gray-500">Belum ada leaderboard untuk grade ini.</p>
+                ) : (
+                  leaderboard.map((row) => (
+                    <div
+                      key={`${row.rank}-${row.student_id}`}
+                      className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-gray-900">
+                          <span className="mr-2 text-xs font-bold text-gray-500">#{row.rank}</span>
+                          {row.name}
+                          <span className="ml-2 text-xs">{formatAnonRankIcon(row.rank)}</span>
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">XP minggu ini</p>
+                      </div>
+                      <div className="ml-4 flex shrink-0 items-center gap-2">
+                        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+                          {Number(row.total_xp || 0)}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => router.push('/student/leaderboard')}
+                  className="w-full rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Lihat Leaderboard Lengkap
+                </button>
+              </div>
             </div>
           </div>
+        </div>
+
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => router.push('/student/leaderboard')}
+            className="text-sm font-medium text-blue-700 hover:text-blue-800"
+          >
+            Buka halaman Leaderboard →
+          </button>
         </div>
       </div>
     </div>
