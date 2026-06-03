@@ -1,5 +1,5 @@
-import { getAuthenticatedParent } from "../../../lib/auth";
-import { supabase } from "../../../lib/supabaseClient";
+import { getAuthenticatedParent } from "@/lib/auth";
+import supabase from '@/lib/supabaseClient';
 
 function httpError(res, status, message) {
   return res.status(status).json({ success: false, message });

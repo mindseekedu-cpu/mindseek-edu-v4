@@ -1,11 +1,5 @@
-import * as supabaseModule from '../../../lib/supabaseClient';
-import { getAuthenticatedParent } from '../../../lib/auth';
-
-const supabase =
-  supabaseModule.default ||
-  supabaseModule.supabase ||
-  supabaseModule.supabaseClient ||
-  supabaseModule.client;
+import supabase from '@/lib/supabaseClient';
+import { getAuthenticatedParent } from '@/lib/auth';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {

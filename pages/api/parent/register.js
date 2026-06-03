@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import nodemailer from 'nodemailer'
-import supabase from '../../../lib/supabaseClient'
+import supabase from '@/lib/supabaseClient';
 
 // ─────────────────────────────────────────────
 // Helper: Validasi input

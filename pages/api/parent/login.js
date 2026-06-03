@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { serialize } from 'cookie'
-import supabase from '../../../lib/supabaseClient'
+import supabase from '@/lib/supabaseClient';
 
 // ─────────────────────────────────────────────
 // Konstanta
