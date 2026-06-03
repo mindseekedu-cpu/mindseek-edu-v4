@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  
+  // Tambahkan baris ini untuk mencegah error modul Supabase
+  transpilePackages: ['@supabase/supabase-js'],
 
   experimental: {
     serverComponentsExternalPackages: [
@@ -26,6 +29,6 @@ const nextConfig = {
   images: {
     domains: []
   }
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;
