@@ -4,12 +4,14 @@ import { jwtVerify } from 'jose'
 // ─────────────────────────────────────────────
 // Konfigurasi route
 // ─────────────────────────────────────────────
-
-// Route yang memerlukan autentikasi (harus login)
+// Route yang memerlukan autentikasi
 const PROTECTED_PREFIXES = ['/dashboard', '/parent', '/student']
 
-// Route yang tidak boleh diakses jika sudah login
+// Route auth parent: tidak boleh diakses jika parent sudah login
 const AUTH_ONLY_PATHS = ['/login', '/register']
+
+// Route auth siswa: tidak boleh diakses jika siswa sudah login
+const STUDENT_AUTH_ONLY_PATHS = ['/student/login']
 
 // ─────────────────────────────────────────────
 // Helper: Cek apakah path cocok dengan prefix
@@ -18,17 +20,32 @@ function matchesPrefix(pathname, prefixes) {
   return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix + '/'))
 }
 
+function isStudentLoginPath(pathname) {
+  return pathname === '/student/login'
+}
+
+function isStudentProtectedPath(pathname) {
+  return matchesPrefix(pathname, ['/student']) && !isStudentLoginPath(pathname)
+}
+
+function isParentProtectedPath(pathname) {
+  return matchesPrefix(pathname, ['/dashboard', '/parent'])
+}
+
 // ─────────────────────────────────────────────
 // Helper: Verifikasi JWT menggunakan jose
-// (jose mendukung Edge Runtime; jsonwebtoken tidak)
 // ─────────────────────────────────────────────
 async function verifyToken(token) {
   try {
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret, {
-      issuer: 'mindseek-edu',
-      audience: 'mindseek-edu-client'
-    })
+    const secret = process.env.JWT_SECRET || process.env.AUTH_JWT_SECRET || process.env.NEXTAUTH_SECRET
+
+    if (!secret) {
+      return { valid: false, payload: null }
+    }
+
+    const encodedSecret = new TextEncoder().encode(secret)
+    const { payload } = await jwtVerify(token, encodedSecret)
+
     return { valid: true, payload }
   } catch (err) {
     return { valid: false, payload: null }
@@ -40,21 +57,65 @@ async function verifyToken(token) {
 // ─────────────────────────────────────────────
 export async function middleware(request) {
   const { pathname } = request.nextUrl
-  const tokenCookie = request.cookies.get('token')
-  const token = tokenCookie?.value || null
 
-  // ── 1. Cek route yang dilindungi ──────────────
-  if (matchesPrefix(pathname, PROTECTED_PREFIXES)) {
+  // ── 1. Route auth siswa (/student/login) ─────
+  if (matchesPrefix(pathname, STUDENT_AUTH_ONLY_PATHS)) {
+    const studentTokenCookie = request.cookies.get('student_token')
+    const studentToken = studentTokenCookie?.value || null
+
+    if (studentToken) {
+      const { valid } = await verifyToken(studentToken)
+
+      if (valid) {
+        return NextResponse.redirect(new URL('/student/dashboard', request.url))
+      }
+
+      const response = NextResponse.next()
+      response.cookies.delete('student_token')
+      return response
+    }
+
+    return NextResponse.next()
+  }
+
+  // ── 2. Route protected siswa (/student/* selain /student/login)
+  if (isStudentProtectedPath(pathname)) {
+    const studentTokenCookie = request.cookies.get('student_token')
+    const studentToken = studentTokenCookie?.value || null
+
+    if (!studentToken) {
+      const loginUrl = new URL('/student/login', request.url)
+      loginUrl.searchParams.set('redirect', pathname)
+      return NextResponse.redirect(loginUrl)
+    }
+
+    const { valid } = await verifyToken(studentToken)
+
+    if (!valid) {
+      const loginUrl = new URL('/student/login', request.url)
+      loginUrl.searchParams.set('redirect', pathname)
+      const response = NextResponse.redirect(loginUrl)
+      response.cookies.delete('student_token')
+      return response
+    }
+
+    return NextResponse.next()
+  }
+
+  // ── 3. Route protected parent (/dashboard, /parent)
+  if (isParentProtectedPath(pathname)) {
+    const tokenCookie = request.cookies.get('token')
+    const token = tokenCookie?.value || null
+
     if (!token) {
-      // Tidak ada token → redirect ke /login
       const loginUrl = new URL('/login', request.url)
       loginUrl.searchParams.set('redirect', pathname)
       return NextResponse.redirect(loginUrl)
     }
 
     const { valid } = await verifyToken(token)
+
     if (!valid) {
-      // Token tidak valid atau expired → hapus cookie & redirect ke /login
       const loginUrl = new URL('/login', request.url)
       loginUrl.searchParams.set('redirect', pathname)
       const response = NextResponse.redirect(loginUrl)
@@ -62,34 +123,33 @@ export async function middleware(request) {
       return response
     }
 
-    // Token valid → lanjutkan request
     return NextResponse.next()
   }
 
-  // ── 2. Cek route auth-only (/login, /register) ─
+  // ── 4. Route auth-only parent (/login, /register)
   if (matchesPrefix(pathname, AUTH_ONLY_PATHS)) {
+    const tokenCookie = request.cookies.get('token')
+    const token = tokenCookie?.value || null
+
     if (token) {
       const { valid } = await verifyToken(token)
+
       if (valid) {
-        // Sudah login → redirect ke /dashboard
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
-      // Token tidak valid → biarkan akses halaman login/register
-      // tapi hapus cookie yang rusak
+
       const response = NextResponse.next()
       response.cookies.delete('token')
       return response
     }
   }
 
-  // ── 3. Semua route lain → lanjutkan ───────────
+  // ── 5. Semua route lain → lanjutkan
   return NextResponse.next()
 }
 
 // ─────────────────────────────────────────────
-// Konfigurasi matcher:
-// Jalankan middleware hanya pada route yang relevan.
-// Exclude: _next/static, _next/image, favicon.ico, api routes.
+// Konfigurasi matcher
 // ─────────────────────────────────────────────
 export const config = {
   matcher: [
