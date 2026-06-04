@@ -1,7 +1,15 @@
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import nodemailer from 'nodemailer'
-import supabase from '@/lib/supabaseClient';
+import sgMail from '@sendgrid/mail'
+import supabase from '@/lib/supabaseClient'
+
+// ─────────────────────────────────────────────
+// Konfigurasi SendGrid (hanya jika API key tersedia)
+// ─────────────────────────────────────────────
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY)
+}
 
 // ─────────────────────────────────────────────
 // Helper: Validasi input
@@ -65,23 +73,64 @@ async function generateUniqueReferralCode() {
 }
 
 // ─────────────────────────────────────────────
-// Helper: Buat Nodemailer transporter
-// Gunakan SendGrid jika SENDGRID_API_KEY ada,
-// fallback ke Ethereal untuk development.
+// Helper: Buat konten email (dipakai oleh kedua path)
 // ─────────────────────────────────────────────
-async function createTransporter() {
-  if (process.env.SENDGRID_API_KEY) {
-    return nodemailer.createTransport({
-      host: 'smtp.sendgrid.net',
-      port: 587,
-      auth: {
-        user: 'apikey',
-        pass: process.env.SENDGRID_API_KEY
-      }
-    })
-  }
+function buildEmailContent({ toEmail, toName, verificationLink }) {
+  const from = process.env.FROM_EMAIL || 'no-reply@mindseekedu.com'
 
-  // Fallback: Ethereal (development only)
+  const subject = 'Verifikasi Email Akun MindSeek Edu Anda'
+
+  const text =
+    `Halo ${toName},\n\n` +
+    `Terima kasih telah mendaftar di MindSeek Edu.\n\n` +
+    `Silakan verifikasi email Anda dengan mengklik link berikut:\n${verificationLink}\n\n` +
+    `Link ini akan kadaluarsa dalam 24 jam.\n\n` +
+    `Jika Anda tidak mendaftar, abaikan email ini.\n\n` +
+    `Salam,\nTim MindSeek Edu`
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2 style="color: #2563eb; margin-bottom: 8px;">MindSeek Edu</h2>
+      <p style="color: #374151;">Halo <strong>${toName}</strong>,</p>
+      <p style="color: #374151;">Terima kasih telah mendaftar di <strong>MindSeek Edu</strong>. Silakan verifikasi alamat email Anda dengan mengklik tombol di bawah ini.</p>
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${verificationLink}"
+           style="display: inline-block; padding: 12px 28px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px;">
+          Verifikasi Email Saya
+        </a>
+      </div>
+      <p style="color: #6b7280; font-size: 13px;">Atau salin link berikut ke browser Anda:</p>
+      <p style="color: #2563eb; font-size: 13px; word-break: break-all;">${verificationLink}</p>
+      <hr style="margin: 24px 0; border: none; border-top: 1px solid #e5e7eb;" />
+      <p style="color: #9ca3af; font-size: 12px;">Link ini akan kadaluarsa dalam <strong>24 jam</strong>. Jika Anda tidak mendaftar, abaikan email ini.</p>
+      <p style="color: #9ca3af; font-size: 12px;">© ${new Date().getFullYear()} MindSeek Edu. All rights reserved.</p>
+    </div>
+  `
+
+  return { from, subject, text, html }
+}
+
+// ─────────────────────────────────────────────
+// Helper: Kirim email via SendGrid SDK
+// ─────────────────────────────────────────────
+async function sendViaSendGrid({ toEmail, toName, verificationLink }) {
+  const { from, subject, text, html } = buildEmailContent({ toEmail, toName, verificationLink })
+
+  await sgMail.send({
+    to: toEmail,
+    from,               // harus verified sender di SendGrid
+    subject,
+    text,
+    html,
+  })
+}
+
+// ─────────────────────────────────────────────
+// Helper: Kirim email via Ethereal (development fallback)
+// ─────────────────────────────────────────────
+async function sendViaEthereal({ toEmail, toName, verificationLink }) {
+  const { from, subject, text, html } = buildEmailContent({ toEmail, toName, verificationLink })
+
   const testAccount = await nodemailer.createTestAccount()
   const transporter = nodemailer.createTransport({
     host: 'smtp.ethereal.email',
@@ -89,57 +138,36 @@ async function createTransporter() {
     secure: false,
     auth: {
       user: testAccount.user,
-      pass: testAccount.pass
-    }
+      pass: testAccount.pass,
+    },
   })
+
   console.log('[DEV] Ethereal email account:', testAccount.user)
-  return { transporter, previewUrl: true }
+
+  const info = await transporter.sendMail({
+    from,
+    to: `"${toName}" <${toEmail}>`,
+    subject,
+    text,
+    html,
+  })
+
+  console.log('[DEV] Preview email URL:', nodemailer.getTestMessageUrl(info))
 }
 
 // ─────────────────────────────────────────────
-// Helper: Kirim email verifikasi
+// Helper: Router pengiriman email
+// Gunakan SendGrid jika SENDGRID_API_KEY ada,
+// fallback ke Ethereal untuk development.
 // ─────────────────────────────────────────────
 async function sendVerificationEmail({ toEmail, toName, verificationToken }) {
   const verificationLink = `${process.env.NEXT_PUBLIC_APP_URL}/verify-email?token=${verificationToken}`
 
-  const result = await createTransporter()
-  const transporter = result.transporter || result
-
-  const fromAddress = process.env.SENDGRID_API_KEY
-    ? `"MindSeek Edu" <no-reply@mindseekedu.com>`
-    : `"MindSeek Edu" <no-reply@ethereal.email>`
-
-  const info = await transporter.sendMail({
-    from: fromAddress,
-    to: `"${toName}" <${toEmail}>`,
-    subject: 'Verifikasi Email Akun MindSeek Edu Anda',
-    text: `Halo ${toName},\n\nTerima kasih telah mendaftar di MindSeek Edu.\n\nSilakan verifikasi email Anda dengan mengklik link berikut:\n${verificationLink}\n\nLink ini akan kadaluarsa dalam 24 jam.\n\nJika Anda tidak mendaftar, abaikan email ini.\n\nSalam,\nTim MindSeek Edu`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-        <h2 style="color: #2563eb; margin-bottom: 8px;">MindSeek Edu</h2>
-        <p style="color: #374151;">Halo <strong>${toName}</strong>,</p>
-        <p style="color: #374151;">Terima kasih telah mendaftar di <strong>MindSeek Edu</strong>. Silakan verifikasi alamat email Anda dengan mengklik tombol di bawah ini.</p>
-        <div style="text-align: center; margin: 32px 0;">
-          <a href="${verificationLink}"
-             style="display: inline-block; padding: 12px 28px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px;">
-            Verifikasi Email Saya
-          </a>
-        </div>
-        <p style="color: #6b7280; font-size: 13px;">Atau salin link berikut ke browser Anda:</p>
-        <p style="color: #2563eb; font-size: 13px; word-break: break-all;">${verificationLink}</p>
-        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e5e7eb;" />
-        <p style="color: #9ca3af; font-size: 12px;">Link ini akan kadaluarsa dalam <strong>24 jam</strong>. Jika Anda tidak mendaftar, abaikan email ini.</p>
-        <p style="color: #9ca3af; font-size: 12px;">© ${new Date().getFullYear()} MindSeek Edu. All rights reserved.</p>
-      </div>
-    `
-  })
-
-  // Log preview URL jika menggunakan Ethereal
-  if (result.previewUrl) {
-    console.log('[DEV] Preview email URL:', nodemailer.getTestMessageUrl(info))
+  if (process.env.SENDGRID_API_KEY) {
+    await sendViaSendGrid({ toEmail, toName, verificationLink })
+  } else {
+    await sendViaEthereal({ toEmail, toName, verificationLink })
   }
-
-  return info
 }
 
 // ─────────────────────────────────────────────
@@ -216,8 +244,8 @@ export default async function handler(req, res) {
           is_email_verified: false,
           is_phone_verified: false,
           subscription_tier: 'starter',
-          created_at: new Date().toISOString()
-        }
+          created_at: new Date().toISOString(),
+        },
       ])
       .select('id')
       .single()
@@ -238,8 +266,8 @@ export default async function handler(req, res) {
           parent_id: newParent.id,
           token: verificationToken,
           expires_at: expiresAt,
-          created_at: new Date().toISOString()
-        }
+          created_at: new Date().toISOString(),
+        },
       ])
 
     if (tokenInsertError) {
@@ -253,17 +281,17 @@ export default async function handler(req, res) {
       await sendVerificationEmail({
         toEmail: normalizedEmail,
         toName: trimmedName,
-        verificationToken
+        verificationToken,
       })
     } catch (emailError) {
       console.error('[register] Email send error:', emailError)
-      // Jangan gagalkan registrasi hanya karena email error
-      // Parent tetap bisa request ulang verifikasi nanti
+      // Jangan gagalkan registrasi hanya karena email error.
+      // Parent tetap bisa request ulang verifikasi nanti.
     }
 
     return res.status(201).json({
       success: true,
-      message: 'Registrasi berhasil. Silakan cek email Anda untuk verifikasi akun (cek folder spam jika tidak ada di inbox).'
+      message: 'Registrasi berhasil. Silakan cek email Anda untuk verifikasi akun (cek folder spam jika tidak ada di inbox).',
     })
   } catch (err) {
     console.error('[register] Unexpected error:', err)
