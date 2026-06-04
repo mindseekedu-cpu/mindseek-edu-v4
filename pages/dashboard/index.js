@@ -29,6 +29,15 @@ function formatMetricLabel(metric) {
   return metric || '-';
 }
 
+function formatPackageName(tier) {
+  const v = String(tier || 'free').toLowerCase();
+  if (v === 'smart_parent') return 'Smart Parent';
+  if (v === 'smart_family') return 'Smart Family';
+  if (v === 'starter') return 'Starter';
+  if (v === 'free') return 'Starter';
+  return formatSubscriptionTier(tier);
+}
+
 export default function ParentDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -36,6 +45,15 @@ export default function ParentDashboardPage() {
   const [students, setStudents] = useState([]);
   const [activeStudentId, setActiveStudentId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+
+  // Package info state
+  const [packageLoading, setPackageLoading] = useState(false);
+  const [packageError, setPackageError] = useState('');
+  const [packageInfo, setPackageInfo] = useState(null);
+
+  // Package actions (auto-renewal toggle + Midtrans)
+  const [autoRenewUpdating, setAutoRenewUpdating] = useState(false);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
 
   // Reward settings state
   const [rewardStudentId, setRewardStudentId] = useState('');
@@ -66,7 +84,9 @@ export default function ParentDashboardPage() {
 
         const response = await fetch('/api/parent/dashboard', {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+          },
         });
 
         const result = await response.json();
@@ -78,13 +98,14 @@ export default function ParentDashboardPage() {
         if (!isMounted) return;
 
         setParent(result.parent || null);
-        const nextStudents = Array.isArray(result.students) ? result.students : [];
-        setStudents(nextStudents);
+        setStudents(Array.isArray(result.students) ? result.students : []);
       } catch (err) {
         if (!isMounted) return;
         setError(err.message || 'Terjadi kesalahan saat memuat data dashboard.');
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
@@ -105,6 +126,123 @@ export default function ParentDashboardPage() {
     window.localStorage.setItem('planType', subscriptionTier);
     window.localStorage.setItem('plan_type', subscriptionTier);
   }, [parent]);
+
+  async function loadPackageInfo() {
+    try {
+      setPackageLoading(true);
+      setPackageError('');
+
+      const response = await fetch('/api/parent/package-info', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal memuat info paket.');
+      }
+
+      setPackageInfo(result.data || null);
+    } catch (err) {
+      setPackageInfo(null);
+      setPackageError(err.message || 'Terjadi kesalahan saat memuat info paket.');
+    } finally {
+      setPackageLoading(false);
+    }
+  }
+
+  async function handleAutoRenewToggle() {
+    const nextValue = !Boolean(packageInfo?.auto_renewal);
+    const confirmed = window.confirm(`Ubah auto-renewal menjadi ${nextValue ? 'Aktif' : 'Nonaktif'}?`);
+    if (!confirmed) return;
+
+    try {
+      setAutoRenewUpdating(true);
+      setPackageError('');
+
+      const response = await fetch('/api/parent/update-autorenewal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auto_renewal: nextValue }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal memperbarui auto-renewal.');
+      }
+
+      await loadPackageInfo();
+    } catch (err) {
+      setPackageError(err.message || 'Gagal memperbarui auto-renewal.');
+    } finally {
+      setAutoRenewUpdating(false);
+    }
+  }
+
+  async function handleUpgrade(packageType) {
+    const pkg = String(packageType || '').trim();
+    if (!pkg) return;
+
+    if (!window.snap || typeof window.snap.pay !== 'function') {
+      setPackageError('Midtrans Snap belum siap. Pastikan script snap.js sudah dimuat.');
+      return;
+    }
+
+    try {
+      setUpgradeLoading(true);
+      setPackageError('');
+
+      const response = await fetch('/api/parent/initiate-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          package_type: pkg,
+          students_count: 1,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal inisiasi pembayaran.');
+      }
+
+      const token = result.snap_token;
+      if (!token) {
+        throw new Error('Snap token tidak tersedia.');
+      }
+
+      window.snap.pay(token, {
+        onSuccess: async function () {
+          await loadPackageInfo();
+          window.location.reload();
+        },
+        onPending: async function () {
+          await loadPackageInfo();
+        },
+        onError: function () {
+          setPackageError('Pembayaran gagal / dibatalkan. Silakan coba lagi.');
+        },
+        onClose: function () {
+          // user menutup popup
+        },
+      });
+    } catch (err) {
+      setPackageError(err.message || 'Gagal memulai pembayaran.');
+    } finally {
+      setUpgradeLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    // package info dipanggil terpisah agar tidak mengganggu dashboard utama
+    loadPackageInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const remainingDays = useMemo(() => {
     return getRemainingDays(parent?.subscription_expires_at);
@@ -144,7 +282,9 @@ export default function ParentDashboardPage() {
 
       const response = await fetch(`/api/parent/students/${student.id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
 
       const result = await response.json();
@@ -295,6 +435,18 @@ export default function ParentDashboardPage() {
     }
   }
 
+  const packageTier = String(packageInfo?.subscription_tier || 'free');
+  const packageName = formatPackageName(packageTier);
+  const subscriptionRemaining = useMemo(() => {
+    return getRemainingDays(packageInfo?.subscription_expires_at);
+  }, [packageInfo]);
+  const trialRemaining = useMemo(() => {
+    if (packageInfo?.trial_remaining_days === null || packageInfo?.trial_remaining_days === undefined) return null;
+    return Number(packageInfo.trial_remaining_days);
+  }, [packageInfo]);
+  const isOnTrial = Boolean(packageInfo?.trial_ends_at) && (trialRemaining === null ? true : trialRemaining > 0);
+  const isPaid = ['smart_parent', 'smart_family'].includes(String(packageTier || '').toLowerCase());
+
   return (
     <div className="min-h-screen bg-slate-50 py-10">
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
@@ -314,6 +466,98 @@ export default function ParentDashboardPage() {
           >
             Tambah Siswa Baru
           </Link>
+        </div>
+
+        {/* Package card */}
+        <div className="mb-8 rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600 p-6 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white/90">Paket Anda</p>
+              <h2 className="mt-2 text-2xl font-bold text-white">{packageLoading ? 'Memuat...' : packageName}</h2>
+              <div className="mt-2 space-y-1 text-sm text-white/90">
+                {packageError ? <p className="text-white/90">{packageError}</p> : null}
+                {isOnTrial ? (
+                  <p>
+                    Status: <span className="font-semibold">Trial</span>
+                    {trialRemaining !== null ? (
+                      <>
+                        {' '}· Sisa <span className="font-semibold">{trialRemaining}</span> hari
+                      </>
+                    ) : null}
+                  </p>
+                ) : (
+                  <p>
+                    Status: <span className="font-semibold">{isPaid ? 'Berlangganan' : 'Starter'}</span>
+                  </p>
+                )}
+
+                {packageInfo?.subscription_expires_at ? (
+                  <p>
+                    Masa aktif:{' '}
+                    <span className="font-semibold">
+                      {subscriptionRemaining === null
+                        ? '—'
+                        : subscriptionRemaining === 0
+                          ? 'Berakhir hari ini'
+                          : `${subscriptionRemaining} hari lagi`}
+                    </span>
+                  </p>
+                ) : (
+                  <p>Masa aktif: <span className="font-semibold">—</span></p>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <p>
+                    Auto-renewal:{' '}
+                    <span className="font-semibold">
+                      {packageInfo?.auto_renewal ? 'Aktif' : 'Nonaktif'}
+                    </span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleAutoRenewToggle}
+                    disabled={autoRenewUpdating || packageLoading}
+                    className="inline-flex items-center justify-center rounded-full border border-white/40 bg-white/10 px-3 py-1 text-xs font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {autoRenewUpdating ? 'Mengubah...' : 'Ubah'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => handleUpgrade('monthly_smart_parent')}
+                disabled={upgradeLoading}
+                className="inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {upgradeLoading ? 'Memproses...' : isPaid ? 'Perpanjang Bulanan' : 'Upgrade Bulanan'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleUpgrade('yearly_smart_parent')}
+                disabled={upgradeLoading}
+                className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {upgradeLoading ? 'Memproses...' : isPaid ? 'Perpanjang Tahunan' : 'Upgrade Tahunan'}
+              </button>
+              <button
+                type="button"
+                onClick={loadPackageInfo}
+                disabled={packageLoading}
+                className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {packageLoading ? 'Memuat...' : 'Refresh'}
+              </button>
+              <Link
+                href="/pricing"
+                className="inline-flex items-center justify-center rounded-xl border border-white/40 bg-transparent px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+              >
+                Lihat Semua Paket
+              </Link>
+            </div>
+          </div>
         </div>
 
         {error ? (
@@ -349,7 +593,6 @@ export default function ParentDashboardPage() {
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-xl font-bold text-slate-900">Daftar Siswa</h2>
           </div>
-
           {loading ? (
             <div className="rounded-2xl bg-white p-6 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">
               Memuat data dashboard...
@@ -431,7 +674,6 @@ export default function ParentDashboardPage() {
               )}
             </div>
           </div>
-
           {loading ? (
             <div className="rounded-2xl bg-slate-50 p-6 text-sm text-slate-600 ring-1 ring-slate-200">
               Menyiapkan laporan siswa...
@@ -528,9 +770,7 @@ export default function ParentDashboardPage() {
 
             <div className="rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200">
               <h3 className="text-base font-bold text-slate-900">Tambah Reward</h3>
-              <p className="mt-1 text-sm text-slate-600">
-                Contoh: target XP 500 → “Beli mainan”.
-              </p>
+              <p className="mt-1 text-sm text-slate-600">Contoh: target XP 500 → “Beli mainan”.</p>
 
               <form onSubmit={handleCreateReward} className="mt-4 space-y-4">
                 <div>
@@ -576,9 +816,7 @@ export default function ParentDashboardPage() {
                   {rewardSaving ? 'Menyimpan...' : 'Simpan Reward'}
                 </button>
 
-                <p className="text-xs text-slate-500">
-                  Setelah disimpan, daftar reward akan otomatis diperbarui.
-                </p>
+                <p className="text-xs text-slate-500">Setelah disimpan, daftar reward akan otomatis diperbarui.</p>
               </form>
             </div>
           </div>
