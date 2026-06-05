@@ -12,41 +12,66 @@ const MODE_XP = {
 function calculateXP(mode, clueUsedCount = 0, attempts = 1) {
   const normalizedMode = String(mode || '').toLowerCase()
   const baseXp = MODE_XP[normalizedMode] || 10
-  const cluePenalty = Math.max(0, Number(clueUsedCount) || 0) * 2
-  const attemptPenalty = Math.max(0, (Number(attempts) || 1) - 1) * 1
+  const cluePenalty = Math.max(0, Number(clueUsedCount) || 0) * 3  // PRD: clue×3
+  const attemptPenalty = Math.max(0, (Number(attempts) || 1) - 1) * 2 // PRD: (attempts-1)×2
 
-  return Math.max(2, baseXp - cluePenalty - attemptPenalty)
+  // Min XP 5 jika solved, 0 jika tidak solved (handled separately)
+  return Math.max(5, baseXp - cluePenalty - attemptPenalty)
 }
 
-function buildSystemPrompt({ student, subject, topic, grade, mode }) {
+function buildSystemPrompt({ student, subject, topic, grade, mode, curriculum, interests, learningStyle, additionalNotes }) {
   const studentName = student?.student_name || 'Siswa'
   const studentGrade = student?.grade || grade || '-'
-  const questionSettings = student?.question_settings
-    ? JSON.stringify(student.question_settings)
-    : '{}'
+  const studentCurriculum = curriculum || student?.curriculum || 'Kurikulum Merdeka'
+  const studentInterests = interests || student?.interests || ''
+  const studentLearningStyle = learningStyle || student?.learning_style || 'Campuran'
+  const studentAdditionalNotes = additionalNotes || student?.additional_notes || ''
 
+  // PRD 6.5 System Prompt Final
   return `
-Kamu adalah AI tutor pendamping belajar untuk siswa Indonesia.
+Anda adalah Ai Mi, guru privat dengan metode Sokratik untuk MindSeek.
 
-Informasi siswa:
-- Nama: ${studentName}
-- Kelas/Grade: ${studentGrade}
-- Mata pelajaran: ${subject}
+[INFORMASI SISWA - WAJIB]
+- Jenjang: ${studentGrade}
+- Kurikulum: ${studentCurriculum}
+- Mata Pelajaran: ${subject}
 - Topik: ${topic}
-- Mode belajar: ${mode}
-- Pengaturan soal siswa: ${questionSettings}
 
-Aturan penting:
-- Jelaskan dengan bahasa yang sesuai usia dan level siswa.
-- Jangan langsung memberi jawaban final tanpa proses berpikir.
-- Bimbing siswa langkah demi langkah.
-- Jika siswa kesulitan, berikan clue/petunjuk bertahap.
-- Maksimal berikan 3 clue.
-- Dorong siswa untuk mencoba dulu sebelum diberi arahan berikutnya.
-- Jika soal meminta perhitungan, fokus pada metode dan langkah.
-- Jika siswa meminta jawaban langsung, tolak dengan halus dan tetap bantu lewat penjelasan.
-- Gunakan gaya yang ramah, singkat, jelas, dan suportif.
-- Jika konteks soal kurang lengkap, minta klarifikasi seperlunya.
+[INFORMASI SISWA - OPSIONAL]
+- Minat: ${studentInterests || '(belum diisi, tanyakan di awal jika perlu)'}
+- Gaya Belajar: ${studentLearningStyle}
+- Catatan Tambahan: ${studentAdditionalNotes || '-'}
+
+[ATURAN UTAMA]
+1. JANGAN pernah memberi jawaban final di awal atau di tengah (maks 3 clue).
+2. JANGAN bilang "salah" mentah-mentah. Gunakan "Hampir, coba periksa lagi" atau "Coba lihat lagi langkah ini".
+3. JANGAN memberi seluruh langkah sekaligus. Berikan satu petunjuk kecil setiap kali.
+4. JANGAN memberi latihan baru sebelum PR selesai.
+5. Jika siswa minta jawaban langsung, arahkan ke clue dan jangan berikan jawaban.
+
+[ATURAN MULTIPLE CHOICE]
+- JANGAN menyebut huruf opsi (A/B/C/D) di clue.
+- Clue bersifat konseptual, bukan menunjukkan opsi.
+- Setelah siswa memilih, beri umpan balik "✔ Benar" atau "✘ Salah. Coba clue sebelumnya."
+
+[ANALOGI & GAYA BELAJAR]
+Sesuaikan dengan jenjang dan minat siswa:
+- SD: permen, balon, boneka, mainan
+- SMP: game, uang jajan, medsos, musik
+- SMA: bisnis, coding, fitness, mobil, persiapan kuliah
+
+[BATASAN PANJANG RESPONS]
+- Maks 2-3 kalimat pendek; untuk analogi boleh 4 kalimat.
+- **Bold** hanya pada angka/kata kunci.
+- Akhiri dengan pertanyaan singkat.
+
+[FORMAT CLUE & JAWABAN]
+- Clue 1: pemantik + analogi (jangan terlalu langsung)
+- Clue 2: pendekatan lebih sederhana (arahkan ke langkah spesifik)
+- Clue 3: jembatan ke jawaban (hampir memberikan solusi tapi masih perlu siswa berpikir)
+- Setelah 3 clue dan masih salah → beri solusi penuh + catat need_guidance = TRUE
+
+Mode saat ini: ${mode}
 `.trim()
 }
 
@@ -55,13 +80,13 @@ function buildMockResponse({ subject, topic, mode, questionText }) {
 
 Dari pertanyaanmu: "${questionText}", kita jangan langsung loncat ke jawaban akhir ya. Kita pecah dulu langkahnya supaya kamu paham konsepnya.
 
-Petunjuk awal:
+Petunjuk awal (Clue 1):
 1. Identifikasi apa yang diketahui dari soal.
 2. Tentukan apa yang sebenarnya ditanya.
 3. Pilih rumus atau konsep yang paling relevan.
 4. Coba kerjakan satu langkah pertama, lalu kirim hasilnya agar bisa kita lanjutkan bersama.
 
-Kalau kamu mau, aku juga bisa kasih **clue 1** tanpa membocorkan jawaban akhirnya.`
+Kalau kamu mau, aku juga bisa kasih **clue 2** tanpa membocorkan jawaban akhirnya.`
 }
 
 async function generateDeepSeekResponse({
@@ -186,9 +211,10 @@ export default async function handler(req, res) {
       })
     }
 
+    // Ambil data lengkap siswa (termasuk curriculum, interests, learning_style, additional_notes)
     const { data: studentProfile, error: studentError } = await supabase
       .from('students_profile')
-      .select('id, student_name, grade, question_settings')
+      .select('id, student_name, grade, curriculum, interests, learning_style, additional_notes, question_settings')
       .eq('id', studentId)
       .single()
 
@@ -199,6 +225,7 @@ export default async function handler(req, res) {
       })
     }
 
+    // Cek atau buat learning session
     const { data: existingSession, error: sessionFindError } = await supabase
       .from('learning_sessions')
       .select('id, total_xp_earned')
@@ -249,12 +276,17 @@ export default async function handler(req, res) {
       session = newSession
     }
 
+    // Build system prompt dengan data lengkap
     const systemPrompt = buildSystemPrompt({
       student: studentProfile,
       subject,
       topic,
       grade,
       mode: normalizedMode,
+      curriculum: studentProfile.curriculum,
+      interests: studentProfile.interests,
+      learningStyle: studentProfile.learning_style,
+      additionalNotes: studentProfile.additional_notes,
     })
 
     const userPrompt = `
@@ -266,10 +298,11 @@ Informasi tambahan:
 - Topic: ${topic}
 - Grade: ${grade}
 - Mode: ${normalizedMode}
+- Clue sudah digunakan: ${clueUsedCount} (maks 3)
 - File OCR placeholder: ${file ? 'Ada file dilampirkan (OCR belum aktif)' : 'Tidak ada file'}
 
-Bantu siswa memahami soal tanpa memberi jawaban langsung.
-`.trim()
+Bantu siswa memahami soal tanpa memberi jawaban langsung. Gunakan clue yang sesuai dengan jumlah clue yang sudah diberikan.
+`
 
     const aiResult = await generateDeepSeekResponse({
       systemPrompt,
@@ -280,8 +313,21 @@ Bantu siswa memahami soal tanpa memberi jawaban langsung.
       questionText,
     })
 
+    // Tentukan apakah perlu guidance (setelah 3 clue dan masih salah)
+    // Untuk MVP, kita asumsikan jika clueUsedCount >= 3 dan AI response mengandung "solusi" atau "jawaban" maka need_guidance = true
+    // Atau kita bisa minta AI menandai dengan flag, tapi untuk sederhananya:
+    let needGuidance = false
+    if (clueUsedCount >= 3) {
+      // Cek apakah response mengandung indikasi solusi penuh
+      const lowerResponse = aiResult.text.toLowerCase()
+      if (lowerResponse.includes('solusi') || lowerResponse.includes('jawaban') || lowerResponse.includes('berikut langkah')) {
+        needGuidance = true
+      }
+    }
+
     const xpEarned = calculateXP(normalizedMode, clueUsedCount, attempts)
 
+    // Insert question log
     const { error: logError } = await supabase.from('question_logs').insert([
       {
         session_id: session.id,
@@ -289,6 +335,7 @@ Bantu siswa memahami soal tanpa memberi jawaban langsung.
         question_text: questionText,
         clue_used_count: clueUsedCount,
         xp_earned: xpEarned,
+        need_guidance: needGuidance, // PRD 6.5: catat need_guidance
       },
     ])
 
@@ -300,8 +347,8 @@ Bantu siswa memahami soal tanpa memberi jawaban langsung.
       })
     }
 
+    // Update session XP
     const updatedSessionXp = (session?.total_xp_earned || 0) + xpEarned
-
     const { error: updateSessionError } = await supabase
       .from('learning_sessions')
       .update({
@@ -355,6 +402,7 @@ Bantu siswa memahami soal tanpa memberi jawaban langsung.
         response: aiResult.text,
         xpEarned,
         aiSource: aiResult.source,
+        needGuidance, // optional, for frontend to know
       },
     })
   } catch (error) {
