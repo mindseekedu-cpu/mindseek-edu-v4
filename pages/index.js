@@ -65,7 +65,7 @@ export default function HomePage() {
                 href="/student/login"
                 className="w-full sm:w-auto px-8 py-3 text-base font-semibold text-green-600 bg-white border border-green-600 rounded-lg hover:bg-green-50"
               >
-                Login Siswa
+                Login (Siswa)
               </Link>
             </div>
           </div>
