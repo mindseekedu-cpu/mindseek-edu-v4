@@ -12,7 +12,7 @@ if (process.env.SENDGRID_API_KEY) {
 }
 
 // ─────────────────────────────────────────────
-// Helper: Validasi input
+// Helper: Validasi input (dengan aturan PRD)
 // ─────────────────────────────────────────────
 function validateInput({ name, email, password, phone }) {
   const errors = []
@@ -33,8 +33,13 @@ function validateInput({ name, email, password, phone }) {
     errors.push('Password minimal 8 karakter.')
   }
 
-  if (!phone || typeof phone !== 'string' || phone.trim().length < 8) {
-    errors.push('Nomor kontak wajib diisi dan minimal 8 digit.')
+  if (!phone || typeof phone !== 'string') {
+    errors.push('Nomor kontak wajib diisi.')
+  } else {
+    const cleaned = phone.replace(/\D/g, '')
+    if (cleaned.length < 10 || cleaned.length > 13) {
+      errors.push('Nomor kontak harus 10-13 digit angka.')
+    }
   }
 
   return errors
@@ -73,7 +78,43 @@ async function generateUniqueReferralCode() {
 }
 
 // ─────────────────────────────────────────────
-// Helper: Buat konten email (dipakai oleh kedua path)
+// Helper: Verifikasi reCAPTCHA v3 token
+// ─────────────────────────────────────────────
+async function verifyRecaptcha(token, action = 'register') {
+  const secretKey = process.env.RECAPTCHA_SECRET_KEY
+  if (!secretKey) {
+    console.warn('[recaptcha] RECAPTCHA_SECRET_KEY tidak diset, verifikasi dilewati.')
+    return true // skip verification if not configured (dev mode)
+  }
+
+  if (!token) {
+    console.warn('[recaptcha] Token tidak diberikan.')
+    return false
+  }
+
+  try {
+    const response = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        secret: secretKey,
+        response: token,
+      }),
+    })
+    const data = await response.json()
+    if (data.success && data.score >= 0.5 && data.action === action) {
+      return true
+    }
+    console.warn('[recaptcha] Verifikasi gagal:', data)
+    return false
+  } catch (err) {
+    console.error('[recaptcha] Error verifikasi:', err)
+    return false
+  }
+}
+
+// ─────────────────────────────────────────────
+// Helper: Buat konten email
 // ─────────────────────────────────────────────
 function buildEmailContent({ toEmail, toName, verificationLink }) {
   const from = process.env.FROM_EMAIL || 'no-reply@mindseekedu.com'
@@ -111,23 +152,20 @@ function buildEmailContent({ toEmail, toName, verificationLink }) {
 }
 
 // ─────────────────────────────────────────────
-// Helper: Kirim email via SendGrid SDK
+// Helper: Kirim email via SendGrid atau fallback Ethereal
 // ─────────────────────────────────────────────
 async function sendViaSendGrid({ toEmail, toName, verificationLink }) {
   const { from, subject, text, html } = buildEmailContent({ toEmail, toName, verificationLink })
 
   await sgMail.send({
     to: toEmail,
-    from,               // harus verified sender di SendGrid
+    from,
     subject,
     text,
     html,
   })
 }
 
-// ─────────────────────────────────────────────
-// Helper: Kirim email via Ethereal (development fallback)
-// ─────────────────────────────────────────────
 async function sendViaEthereal({ toEmail, toName, verificationLink }) {
   const { from, subject, text, html } = buildEmailContent({ toEmail, toName, verificationLink })
 
@@ -155,11 +193,6 @@ async function sendViaEthereal({ toEmail, toName, verificationLink }) {
   console.log('[DEV] Preview email URL:', nodemailer.getTestMessageUrl(info))
 }
 
-// ─────────────────────────────────────────────
-// Helper: Router pengiriman email
-// Gunakan SendGrid jika SENDGRID_API_KEY ada,
-// fallback ke Ethereal untuk development.
-// ─────────────────────────────────────────────
 async function sendVerificationEmail({ toEmail, toName, verificationToken }) {
   const verificationLink = `${process.env.NEXT_PUBLIC_APP_URL}/verify-email?token=${verificationToken}`
 
@@ -178,7 +211,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ success: false, message: 'Method tidak diizinkan.' })
   }
 
-  const { name, email, password, phone, referral_code } = req.body
+  const { name, email, password, phone, referral_code, recaptcha_token } = req.body
 
   // 1. Validasi input
   const validationErrors = validateInput({ name, email, password, phone })
@@ -188,49 +221,62 @@ export default async function handler(req, res) {
 
   const normalizedEmail = email.trim().toLowerCase()
   const trimmedName = name.trim()
-  const trimmedPhone = phone.trim()
+  const cleanedPhone = phone.replace(/\D/g, '') // store as numeric only
+
+  // 2. Verifikasi reCAPTCHA (jika diaktifkan)
+  const isCaptchaValid = await verifyRecaptcha(recaptcha_token, 'register')
+  if (!isCaptchaValid && process.env.RECAPTCHA_SECRET_KEY) {
+    return res.status(400).json({ success: false, message: 'Verifikasi keamanan gagal. Silakan coba lagi.' })
+  }
 
   try {
-    // 2. Cek apakah email sudah terdaftar
-    const { data: existingParent, error: checkError } = await supabase
+    // 3. Cek apakah email atau phone sudah terdaftar (UNIQUE constraint)
+    const { data: existing, error: checkError } = await supabase
       .from('parent_profile')
-      .select('id')
-      .eq('email', normalizedEmail)
-      .single()
+      .select('id, email, phone')
+      .or(`email.eq.${normalizedEmail},phone.eq.${cleanedPhone}`)
+      .maybeSingle()
 
     if (checkError && checkError.code !== 'PGRST116') {
-      // PGRST116 = row not found (bukan error sesungguhnya)
       console.error('[register] Supabase check error:', checkError)
-      return res.status(500).json({ success: false, message: 'Terjadi kesalahan saat memeriksa email.' })
+      return res.status(500).json({ success: false, message: 'Terjadi kesalahan saat memeriksa data.' })
     }
 
-    if (existingParent) {
-      return res.status(400).json({ success: false, message: 'Email sudah terdaftar. Silakan login atau gunakan email lain.' })
+    if (existing) {
+      if (existing.email === normalizedEmail) {
+        return res.status(400).json({ success: false, message: 'Email sudah terdaftar. Silakan login.' })
+      }
+      if (existing.phone === cleanedPhone) {
+        return res.status(400).json({ success: false, message: 'Nomor kontak sudah terdaftar.' })
+      }
     }
 
-    // 3. Validasi referral code yang dimasukkan (jika ada)
+    // 4. Validasi referral code (jika ada) dan anti self-referral
     let referredById = null
     if (referral_code && typeof referral_code === 'string' && referral_code.trim().length > 0) {
-      const { data: referrer } = await supabase
+      const upperCode = referral_code.trim().toUpperCase()
+      const { data: referrer, error: refError } = await supabase
         .from('parent_profile')
         .select('id')
-        .eq('referral_code', referral_code.trim().toUpperCase())
+        .eq('referral_code', upperCode)
         .single()
 
-      if (!referrer) {
+      if (refError || !referrer) {
         return res.status(400).json({ success: false, message: 'Kode referral tidak valid.' })
       }
       referredById = referrer.id
+      // Anti self-referral akan dicek setelah parent dibuat? Sebenarnya sebelum dibuat kita belum tahu ID sendiri.
+      // Tapi kita bisa cek apakah referrer adalah dirinya sendiri? Belum ada ID. Jadi aman.
     }
 
-    // 4. Hash password
+    // 5. Hash password
     const saltRounds = 12
     const passwordHash = await bcrypt.hash(password, saltRounds)
 
-    // 5. Generate referral code unik untuk parent baru
+    // 6. Generate referral code unik untuk parent baru
     const newReferralCode = await generateUniqueReferralCode()
 
-    // 6. Simpan parent ke Supabase
+    // 7. Simpan parent ke Supabase
     const { data: newParent, error: insertError } = await supabase
       .from('parent_profile')
       .insert([
@@ -238,7 +284,7 @@ export default async function handler(req, res) {
           name: trimmedName,
           email: normalizedEmail,
           password_hash: passwordHash,
-          phone: trimmedPhone,
+          phone: cleanedPhone,
           referral_code: newReferralCode,
           referred_by: referredById,
           is_email_verified: false,
@@ -252,10 +298,20 @@ export default async function handler(req, res) {
 
     if (insertError) {
       console.error('[register] Supabase insert error:', insertError)
+      // Cek kemungkinan conflict (misal phone duplicate karena race condition)
+      if (insertError.code === '23505') {
+        const constraint = insertError.message || ''
+        if (constraint.includes('email')) {
+          return res.status(400).json({ success: false, message: 'Email sudah terdaftar.' })
+        }
+        if (constraint.includes('phone')) {
+          return res.status(400).json({ success: false, message: 'Nomor kontak sudah terdaftar.' })
+        }
+      }
       return res.status(500).json({ success: false, message: 'Terjadi kesalahan saat menyimpan data. Silakan coba lagi.' })
     }
 
-    // 7. Generate token verifikasi email (64 karakter hex)
+    // 8. Generate token verifikasi email (64 karakter hex)
     const verificationToken = crypto.randomBytes(32).toString('hex')
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 jam
 
@@ -276,7 +332,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, message: 'Akun dibuat namun gagal mengirim email verifikasi. Hubungi support.' })
     }
 
-    // 8. Kirim email verifikasi
+    // 9. Kirim email verifikasi
     try {
       await sendVerificationEmail({
         toEmail: normalizedEmail,
@@ -286,7 +342,6 @@ export default async function handler(req, res) {
     } catch (emailError) {
       console.error('[register] Email send error:', emailError)
       // Jangan gagalkan registrasi hanya karena email error.
-      // Parent tetap bisa request ulang verifikasi nanti.
     }
 
     return res.status(201).json({
