@@ -63,7 +63,14 @@ export default function StudentLoginPage() {
       const result = await response.json().catch(() => null);
 
       if (!response.ok) {
-        setServerError(result?.message || 'Login gagal. Silakan coba lagi.');
+        // Tangani rate limiting (429)
+        if (response.status === 429) {
+          setServerError(result?.message || 'Terlalu banyak percobaan gagal. Coba lagi nanti.');
+        } else if (response.status === 401) {
+          setServerError(result?.message || 'Student ID atau PIN salah.');
+        } else {
+          setServerError(result?.message || 'Login gagal. Silakan coba lagi.');
+        }
         return;
       }
 
@@ -79,7 +86,7 @@ export default function StudentLoginPage() {
   return (
     <>
       <Head>
-        <title>Login Siswa</title>
+        <title>Login Siswa – MindSeek Edu</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
@@ -214,11 +221,12 @@ export default function StudentLoginPage() {
                 </form>
 
                 <div className="mt-6 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  {/* Link ke parent dashboard untuk reset PIN */}
                   <Link
-                    href="#"
+                    href="/dashboard"
                     className="font-medium text-indigo-600 transition hover:text-indigo-700"
                   >
-                    Lupa PIN
+                    Lupa PIN? Hubungi Orang Tua
                   </Link>
 
                   <Link
@@ -233,7 +241,7 @@ export default function StudentLoginPage() {
                   <p className="text-sm font-semibold text-slate-800">Tips</p>
                   <p className="mt-1 text-sm leading-6 text-slate-600">
                     Pastikan Student ID dan PIN diisi lengkap 6 digit angka sebelum menekan tombol
-                    login.
+                    login. Jika gagal 3 kali, akun akan diblokir sementara 15 menit.
                   </p>
                 </div>
               </div>
