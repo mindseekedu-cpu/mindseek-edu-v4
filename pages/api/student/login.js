@@ -8,11 +8,9 @@ const STUDENT_LOGIN_BLOCK_MINUTES = 15;
 const STUDENT_TOKEN_COOKIE_NAME = 'student_token';
 const STUDENT_TOKEN_EXPIRES_IN = '7d';
 
-const failedLoginAttempts = global.studentFailedLoginAttempts || new Map();
-
-if (!global.studentFailedLoginAttempts) {
-  global.studentFailedLoginAttempts = failedLoginAttempts;
-}
+// In-memory store for failed attempts (will reset on server restart)
+// For production, consider using Redis or database
+const failedLoginAttempts = new Map(); // key: student_id (6 digit), value: { count, blockedUntil }
 
 function normalizeStudentId(value) {
   return String(value || '').trim();
@@ -77,35 +75,49 @@ export default async function handler(req, res) {
   }
 
   try {
-    const studentId = normalizeStudentId(req.body?.studentId);
+    const studentIdInput = normalizeStudentId(req.body?.studentId);
     const pin = normalizePin(req.body?.pin);
 
-    if (!studentId) {
+    if (!studentIdInput) {
       return res.status(400).json({ success: false, message: 'Student ID wajib diisi' });
     }
     if (!pin) {
       return res.status(400).json({ success: false, message: 'PIN wajib diisi' });
     }
-    if (!/^\d{6}$/.test(studentId)) {
+    if (!/^\d{6}$/.test(studentIdInput)) {
       return res.status(400).json({ success: false, message: 'Student ID harus 6 digit angka' });
     }
     if (!/^\d{6}$/.test(pin)) {
       return res.status(400).json({ success: false, message: 'PIN harus 6 digit angka' });
     }
 
-    const attemptState = getAttemptState(studentId);
+    // Rate limiting check
+    const attemptState = getAttemptState(studentIdInput);
     if (attemptState.blockedUntil && attemptState.blockedUntil > Date.now()) {
+      const remainingMinutes = formatBlockMinutes(attemptState.blockedUntil);
       return res.status(429).json({
         success: false,
-        message: `Terlalu banyak percobaan gagal. Coba lagi dalam ${formatBlockMinutes(attemptState.blockedUntil)} menit.`,
+        message: `Terlalu banyak percobaan gagal. Coba lagi dalam ${remainingMinutes} menit.`,
+        data: { blockedUntil: attemptState.blockedUntil, remainingAttempts: 0 }
       });
     }
 
-    // Hanya select kolom yang ada di tabel students_profile
+    // Ambil data siswa + parent (untuk cek is_active)
     const { data: student, error: studentError } = await supabase
       .from('students_profile')
-      .select('id, student_id, student_name, parent_id, pin_hash')
-      .eq('student_id', studentId)
+      .select(`
+        id,
+        student_id,
+        student_name,
+        parent_id,
+        pin_hash,
+        deleted_at,
+        parent:parent_profile (
+          is_active
+        )
+      `)
+      .eq('student_id', studentIdInput)
+      .is('deleted_at', null)
       .maybeSingle();
 
     if (studentError) {
@@ -113,25 +125,47 @@ export default async function handler(req, res) {
     }
 
     if (!student) {
-      return res.status(401).json({ success: false, message: 'Student ID atau PIN salah' });
+      // Record failed attempt to prevent brute force
+      const failedState = recordFailedAttempt(studentIdInput);
+      const remaining = STUDENT_LOGIN_MAX_ATTEMPTS - failedState.count;
+      return res.status(401).json({
+        success: false,
+        message: `Student ID atau PIN salah. Sisa percobaan: ${remaining}.`,
+        remainingAttempts: remaining
+      });
     }
 
+    // Cek apakah akun parent dibekukan
+    const parentIsActive = student.parent?.is_active ?? true;
+    if (!parentIsActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Akun orang tua sedang dibekukan. Hubungi support untuk bantuan.'
+      });
+    }
+
+    // Verifikasi PIN
     const isPinValid = await bcrypt.compare(pin, student.pin_hash || '');
     if (!isPinValid) {
-      const failedState = recordFailedAttempt(studentId);
+      const failedState = recordFailedAttempt(studentIdInput);
+      const remaining = STUDENT_LOGIN_MAX_ATTEMPTS - failedState.count;
       if (failedState.isBlocked && failedState.blockedUntil) {
         return res.status(429).json({
           success: false,
           message: `Terlalu banyak percobaan gagal. Akun diblokir sementara selama ${STUDENT_LOGIN_BLOCK_MINUTES} menit.`,
+          remainingAttempts: 0,
+          data: { blockedUntil: failedState.blockedUntil }
         });
       }
       return res.status(401).json({
         success: false,
-        message: `Student ID atau PIN salah. Sisa percobaan ${STUDENT_LOGIN_MAX_ATTEMPTS - failedState.count} kali.`,
+        message: `Student ID atau PIN salah. Sisa percobaan: ${remaining}.`,
+        remainingAttempts: remaining
       });
     }
 
-    clearFailedAttempts(studentId);
+    // Login berhasil → clear failed attempts
+    clearFailedAttempts(studentIdInput);
 
     const payload = {
       id: student.id,
@@ -153,9 +187,14 @@ export default async function handler(req, res) {
       })
     );
 
-    return res.status(200).json({ success: true, redirect: '/student/dashboard' });
+    return res.status(200).json({
+      success: true,
+      message: 'Login berhasil',
+      redirect: '/student/dashboard'
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Terjadi kesalahan pada server';
+    console.error('[student-login] Error:', error);
     return res.status(500).json({ success: false, message });
   }
 }
