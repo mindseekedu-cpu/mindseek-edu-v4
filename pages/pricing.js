@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Head from 'next/head'
 import Link from 'next/link'
+import { useRouter } from 'next/router'
 
 function formatIDR(amount) {
   const n = Number(amount || 0)
@@ -14,6 +15,7 @@ function calcDiscounted(base, pct) {
 }
 
 export default function PricingPage() {
+  const router = useRouter()
   const BASE_MONTHLY = 169000
 
   const familyDiscounts = useMemo(
@@ -29,7 +31,10 @@ export default function PricingPage() {
 
   const [packageInfo, setPackageInfo] = useState(null)
   const [packageInfoLoaded, setPackageInfoLoaded] = useState(false)
+  const [paymentLoading, setPaymentLoading] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
 
+  // Load package info (trial status)
   useEffect(() => {
     let mounted = true
 
@@ -38,6 +43,7 @@ export default function PricingPage() {
         const res = await fetch('/api/parent/package-info', {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
         })
 
         if (!res.ok) {
@@ -93,10 +99,96 @@ export default function PricingPage() {
     }))
   }, [familyMonthlyRows])
 
+  // Handle payment / trial with Midtrans
+  const handlePackageAction = async (packageType, isTrial = false) => {
+    setPaymentError('')
+    setPaymentLoading(true)
+
+    // For trial, we only allow monthly packages
+    if (isTrial && !packageType.includes('monthly')) {
+      setPaymentError('Trial hanya tersedia untuk paket bulanan.')
+      setPaymentLoading(false)
+      return
+    }
+
+    // For Smart Family, we need to know number of students
+    let studentsCount = 1
+    if (packageType === 'monthly_smart_family' || packageType === 'yearly_smart_family') {
+      // Fetch current students count from parent dashboard
+      try {
+        const dashboardRes = await fetch('/api/parent/dashboard', {
+          credentials: 'include',
+        })
+        const dashboardJson = await dashboardRes.json()
+        if (dashboardJson.success && Array.isArray(dashboardJson.students)) {
+          studentsCount = Math.min(dashboardJson.students.length, 5) || 1
+        }
+      } catch (err) {
+        console.error('Failed to fetch students count', err)
+        studentsCount = 1
+      }
+    }
+
+    try {
+      const response = await fetch('/api/parent/initiate-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          package_type: packageType,
+          students_count: studentsCount,
+          is_trial: isTrial, // Add flag for trial
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Gagal memproses pembayaran.')
+      }
+
+      // Use Midtrans Snap
+      if (typeof window !== 'undefined' && window.snap) {
+        window.snap.pay(result.snap_token, {
+          onSuccess: function (result) {
+            console.log('Payment success:', result)
+            // Redirect to dashboard after success
+            router.push('/dashboard')
+          },
+          onPending: function (result) {
+            console.log('Payment pending:', result)
+            router.push('/dashboard')
+          },
+          onError: function (result) {
+            console.error('Payment error:', result)
+            setPaymentError('Pembayaran gagal. Silakan coba lagi.')
+            setPaymentLoading(false)
+          },
+          onClose: function () {
+            console.log('Customer closed popup')
+            setPaymentLoading(false)
+          },
+        })
+      } else {
+        // Fallback: redirect to Snap URL
+        if (result.snap_redirect_url) {
+          window.location.href = result.snap_redirect_url
+        } else {
+          throw new Error('Midtrans Snap tidak tersedia.')
+        }
+      }
+    } catch (err) {
+      setPaymentError(err.message || 'Terjadi kesalahan.')
+      setPaymentLoading(false)
+    }
+  }
+
   return (
     <>
       <Head>
-        <title>Paket & Harga</title>
+        <title>Paket & Harga – MindSeek Edu</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
@@ -128,46 +220,32 @@ export default function PricingPage() {
             </div>
           </div>
 
-          <div className="mt-8 grid gap-6 lg:grid-cols-3">
-            {/* Starter */}
-            <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">Starter</h2>
-                  <p className="mt-1 text-sm text-slate-600">Untuk coba-coba, fitur terbatas.</p>
-                </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                  Gratis
-                </span>
+          {/* Paket Starter - hanya informasi kecil (bukan kartu besar) */}
+          <div className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Paket Starter (Gratis)</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Maks 1 siswa, 5 soal/hari, laporan 7 hari, tanpa Auto-Pilot. Cocok untuk mencoba.
+                </p>
               </div>
-
-              <div className="mt-5">
-                <p className="text-3xl font-bold text-slate-900">Rp0</p>
-                <p className="mt-1 text-sm text-slate-600">Selamanya</p>
-              </div>
-
-              <div className="mt-6 space-y-3 text-sm text-slate-700">
-                <p>Termasuk akses dasar untuk mencoba alur belajar.</p>
-                <p>Leaderboard dan gamifikasi dasar tetap tersedia.</p>
-                <p>Laporan parent & pengaturan lanjutan terbatas.</p>
-              </div>
-
-              <div className="mt-6">
-                <Link
-                  href="/dashboard"
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-                >
-                  Mulai Gratis
-                </Link>
-              </div>
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                Gunakan Gratis
+              </Link>
             </div>
+          </div>
 
+          {/* Smart Parent & Smart Family cards */}
+          <div className="mt-8 grid gap-6 lg:grid-cols-2">
             {/* Smart Parent */}
             <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-sky-200">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">Smart Parent</h2>
-                  <p className="mt-1 text-sm text-slate-600">Paket bulanan untuk 1 siswa.</p>
+                  <p className="mt-1 text-sm text-slate-600">Paket untuk 1 siswa.</p>
                 </div>
                 <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">
                   Populer
@@ -190,24 +268,26 @@ export default function PricingPage() {
 
               <div className="mt-6 space-y-3">
                 {showTrialCTA ? (
-                  <Link
-                    href="/dashboard"
-                    className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700"
+                  <button
+                    onClick={() => handlePackageAction('monthly_smart_parent', true)}
+                    disabled={paymentLoading}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Coba 7 Hari Gratis (Bulanan)
-                  </Link>
+                    {paymentLoading ? 'Memproses...' : 'Coba 7 Hari Gratis (Bulanan)'}
+                  </button>
                 ) : (
                   <div className="w-full rounded-xl bg-slate-100 px-5 py-3 text-center text-sm font-semibold text-slate-600">
                     Trial tidak tersedia
                   </div>
                 )}
 
-                <Link
-                  href="/dashboard"
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                <button
+                  onClick={() => handlePackageAction('yearly_smart_parent', false)}
+                  disabled={paymentLoading}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Beli Sekarang (Tahunan)
-                </Link>
+                  {paymentLoading ? 'Memproses...' : 'Beli Sekarang (Tahunan)'}
+                </button>
               </div>
             </div>
 
@@ -237,28 +317,37 @@ export default function PricingPage() {
 
               <div className="mt-6 space-y-3">
                 {showTrialCTA ? (
-                  <Link
-                    href="/dashboard"
-                    className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                  <button
+                    onClick={() => handlePackageAction('monthly_smart_family', true)}
+                    disabled={paymentLoading}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Coba 7 Hari Gratis (Bulanan)
-                  </Link>
+                    {paymentLoading ? 'Memproses...' : 'Coba 7 Hari Gratis (Bulanan)'}
+                  </button>
                 ) : (
                   <div className="w-full rounded-xl bg-slate-100 px-5 py-3 text-center text-sm font-semibold text-slate-600">
                     Trial tidak tersedia
                   </div>
                 )}
 
-                <Link
-                  href="/dashboard"
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                <button
+                  onClick={() => handlePackageAction('yearly_smart_family', false)}
+                  disabled={paymentLoading}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Beli Sekarang (Tahunan)
-                </Link>
+                  {paymentLoading ? 'Memproses...' : 'Beli Sekarang (Tahunan)'}
+                </button>
               </div>
             </div>
           </div>
 
+          {paymentError && (
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {paymentError}
+            </div>
+          )}
+
+          {/* Tabel diskon Smart Family */}
           <div className="mt-10 grid gap-6 lg:grid-cols-2">
             <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
               <h3 className="text-lg font-bold text-slate-900">Smart Family — Tabel Diskon Bulanan</h3>
@@ -323,14 +412,16 @@ export default function PricingPage() {
             </div>
           </div>
 
+          {/* FAQ */}
           <div className="mt-10 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <h3 className="text-lg font-bold text-slate-900">FAQ singkat</h3>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
                 <p className="text-sm font-semibold text-slate-900">Bagaimana trial 7 hari bekerja?</p>
                 <p className="mt-1 text-sm text-slate-600">
-                  Trial tersedia untuk paket bulanan, maksimal sekali per akun parent. Setelah trial, Anda bisa lanjut
-                  berlangganan.
+                  Trial tersedia untuk paket bulanan, maksimal sekali per akun parent. Anda akan diminta memasukkan
+                  metode pembayaran (kartu kredit/debit) untuk verifikasi. Setelah trial berakhir, langganan akan
+                  otomatis diperpanjang kecuali dibatalkan.
                 </p>
               </div>
               <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
