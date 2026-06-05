@@ -1,6 +1,6 @@
 import Head from 'next/head'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/router'
 
 const initialForm = {
@@ -23,12 +23,21 @@ function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
+function validatePhone(phone) {
+  // Minimal 10 digit, maksimal 13 digit, hanya angka
+  const cleaned = phone.replace(/\D/g, '')
+  return cleaned.length >= 10 && cleaned.length <= 13
+}
+
 function validateForm(values) {
   const errors = { ...initialErrors }
   let isValid = true
 
   if (!values.parentName.trim()) {
     errors.parentName = 'Nama orang tua wajib diisi.'
+    isValid = false
+  } else if (values.parentName.trim().length < 2) {
+    errors.parentName = 'Nama minimal 2 karakter.'
     isValid = false
   }
 
@@ -51,6 +60,9 @@ function validateForm(values) {
   if (!values.contactNumber.trim()) {
     errors.contactNumber = 'Nomor kontak wajib diisi.'
     isValid = false
+  } else if (!validatePhone(values.contactNumber)) {
+    errors.contactNumber = 'Nomor kontak harus 10-13 digit angka.'
+    isValid = false
   }
 
   return { errors, isValid }
@@ -62,11 +74,31 @@ export default function RegisterPage() {
   const [errors, setErrors] = useState(initialErrors)
   const [isLoading, setIsLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
+  const [captchaToken, setCaptchaToken] = useState(null)
+  const recaptchaRef = useRef(null)
+
+  // Load reCAPTCHA script jika diperlukan (opsional, bisa pakai package)
+  // Untuk keperluan MVP, kita asumsikan captcha token didapat dari external script
 
   function handleChange(e) {
     const { name, value } = e.target
     setForm((prev) => ({ ...prev, [name]: value }))
     setErrors((prev) => ({ ...prev, [name]: '', form: '' }))
+  }
+
+  // Simulasi get reCAPTCHA token (implementasi nyata perlu load script)
+  const getRecaptchaToken = async () => {
+    // Jika tidak ada konfigurasi reCAPTCHA, lewati
+    if (typeof window === 'undefined') return null
+    if (window.grecaptcha && process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
+      try {
+        return await window.grecaptcha.execute(process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY, { action: 'register' })
+      } catch (err) {
+        console.error('reCAPTCHA error:', err)
+        return null
+      }
+    }
+    return null
   }
 
   async function handleSubmit(e) {
@@ -80,6 +112,14 @@ export default function RegisterPage() {
     }
 
     setIsLoading(true)
+    // Dapatkan token reCAPTCHA (opsional, jika gagal tetap lanjut tapi log)
+    let captcha = null
+    try {
+      captcha = await getRecaptchaToken()
+    } catch (err) {
+      console.warn('reCAPTCHA unavailable, proceeding without')
+    }
+
     try {
       const res = await fetch('/api/parent/register', {
         method: 'POST',
@@ -89,27 +129,32 @@ export default function RegisterPage() {
           email: form.email.trim().toLowerCase(),
           password: form.password,
           phone: form.contactNumber.trim(),
-          referral_code: form.referralCode.trim() || null
+          referral_code: form.referralCode.trim() || null,
+          recaptcha_token: captcha
         })
       })
 
       const data = await res.json()
 
       if (!res.ok) {
-        setErrors((prev) => ({
-          ...prev,
-          form: data.message || 'Terjadi kesalahan. Silakan coba lagi.'
-        }))
+        // Tangani error spesifik dari API
+        let errorMsg = data.message || 'Terjadi kesalahan. Silakan coba lagi.'
+        if (errorMsg.toLowerCase().includes('email already registered') || errorMsg.toLowerCase().includes('email sudah terdaftar')) {
+          setErrors((prev) => ({ ...prev, email: 'Email sudah terdaftar. Silakan login.' }))
+        } else if (errorMsg.toLowerCase().includes('phone already registered') || errorMsg.toLowerCase().includes('nomor sudah terdaftar')) {
+          setErrors((prev) => ({ ...prev, contactNumber: 'Nomor kontak sudah terdaftar.' }))
+        } else {
+          setErrors((prev) => ({ ...prev, form: errorMsg }))
+        }
         return
       }
 
-      setSuccessMessage(data.message || 'Registrasi berhasil. Silakan cek email Anda.')
+      setSuccessMessage(data.message || 'Registrasi berhasil. Silakan cek email Anda untuk verifikasi.')
       setForm(initialForm)
+      // Reset captcha jika perlu
+      if (window.grecaptcha) window.grecaptcha.reset()
     } catch (err) {
-      setErrors((prev) => ({
-        ...prev,
-        form: 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.'
-      }))
+      setErrors((prev) => ({ ...prev, form: 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.' }))
     } finally {
       setIsLoading(false)
     }
@@ -121,6 +166,10 @@ export default function RegisterPage() {
         <title>Daftar – MindSeek Edu</title>
         <meta name="description" content="Daftarkan akun orang tua di MindSeek Edu." />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* Load reCAPTCHA script jika ada site key */}
+        {process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY && (
+          <script src={`https://www.google.com/recaptcha/api.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`} async defer />
+        )}
       </Head>
 
       <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
@@ -203,7 +252,7 @@ export default function RegisterPage() {
                 autoComplete="new-password"
                 value={form.password}
                 onChange={handleChange}
-                placeholder="Minimal 8 karakter"
+                placeholder="Minimal 8 karakter (huruf + angka)"
                 className={`input-base ${errors.password ? 'border-red-400 focus:ring-red-400 focus:border-red-400' : ''}`}
               />
               {errors.password && (
@@ -223,7 +272,7 @@ export default function RegisterPage() {
                 autoComplete="tel"
                 value={form.contactNumber}
                 onChange={handleChange}
-                placeholder="Contoh: 08123456789"
+                placeholder="Contoh: 08123456789 (10-13 digit)"
                 className={`input-base ${errors.contactNumber ? 'border-red-400 focus:ring-red-400 focus:border-red-400' : ''}`}
               />
               {errors.contactNumber && (
