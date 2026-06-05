@@ -9,7 +9,7 @@ export default function StudentDashboardPage() {
   const [error, setError] = useState('');
 
   // UI state
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [language, setLanguage] = useState('id');
@@ -185,7 +185,7 @@ export default function StudentDashboardPage() {
     placeholder: language === 'id'
       ? 'Tanyakan soalmu dan dapatkan bantuan langkah demi langkah...'
       : 'Ask your question and get step-by-step help...',
-    greeting: language === 'id' ? 'Mulai belajar,' : 'Let\'s start in,',
+    greeting: language === 'id' ? 'Mulai belajar,' : "Let's start in,",
     ready: language === 'id' ? 'Siap membantu' : 'Ready when you are',
   };
 
@@ -205,7 +205,7 @@ export default function StudentDashboardPage() {
       </Head>
 
       <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-200">
-        {/* Mobile overlay */}
+        {/* Mobile overlay for sidebar */}
         {isMobile && sidebarOpen && (
           <div className="fixed inset-0 bg-black/40 z-20" onClick={() => setSidebarOpen(false)} />
         )}
@@ -259,7 +259,7 @@ export default function StudentDashboardPage() {
           </div>
         </div>
 
-        {/* Sidebar */}
+        {/* Sidebar (collapsible) */}
         <aside
           className={`fixed top-14 bottom-0 z-20 w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -387,18 +387,18 @@ export default function StudentDashboardPage() {
           </div>
         </aside>
 
-        {/* Main Chat Area – Gemini style (wide, centered) */}
+        {/* Main chat area – clean, wide, balanced */}
         <main
           className={`pt-14 transition-all duration-300 ${
             !isMobile && sidebarOpen ? 'ml-80' : 'ml-0'
           }`}
         >
-          <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col min-h-[calc(100vh-56px)]">
-            {/* Greeting or messages */}
-            <div className="flex-1 overflow-y-auto pb-6">
+          <div className="max-w-3xl mx-auto px-6 py-10 flex flex-col min-h-[calc(100vh-56px)]">
+            {/* Chat content */}
+            <div className="flex-1 overflow-y-auto pb-10">
               {messages.length === 0 && !chatLoading ? (
-                <div className="flex flex-col items-center justify-center text-center space-y-5 min-h-[60vh]">
-                  <div className="w-32 h-32 flex items-center justify-center text-7xl font-bold text-blue-600">🧠</div>
+                <div className="flex flex-col items-center justify-center text-center space-y-6 min-h-[60vh]">
+                  <div className="w-28 h-28 flex items-center justify-center text-6xl font-bold text-blue-600">🧠</div>
                   <h2 className="text-3xl md:text-4xl font-light text-gray-800 dark:text-gray-100">
                     {t.greeting} {student?.name || 'Siswa'}.
                   </h2>
@@ -419,9 +419,7 @@ export default function StudentDashboardPage() {
                         }`}
                       >
                         <div className="whitespace-pre-wrap">{msg.content}</div>
-                        {msg.xp && (
-                          <div className="text-xs mt-1 opacity-70">+{msg.xp} XP</div>
-                        )}
+                        {msg.xp && <div className="text-xs mt-1 opacity-70">+{msg.xp} XP</div>}
                       </div>
                     </div>
                   ))}
@@ -430,14 +428,8 @@ export default function StudentDashboardPage() {
                       <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl px-5 py-3">
                         <div className="flex gap-1">
                           <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
-                          <span
-                            className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                            style={{ animationDelay: '150ms' }}
-                          ></span>
-                          <span
-                            className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                            style={{ animationDelay: '300ms' }}
-                          ></span>
+                          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                         </div>
                       </div>
                     </div>
@@ -447,9 +439,9 @@ export default function StudentDashboardPage() {
               )}
             </div>
 
-            {/* Floating Input Pill – Gemini style: wide, at the bottom, not cramped */}
-            <div className="relative mt-6 pb-6">
-              <div className="flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full shadow-sm hover:shadow-md transition">
+            {/* Floating input pill – wide, comfortable */}
+            <div className="relative mt-auto pt-4">
+              <div className="flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full shadow-sm hover:shadow transition">
                 <div className="relative">
                   <button
                     onClick={() => setShowUploadPopup(!showUploadPopup)}
