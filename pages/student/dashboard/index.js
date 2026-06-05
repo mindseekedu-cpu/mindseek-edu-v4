@@ -1,6 +1,20 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
+import { 
+  PlusIcon, 
+  ArrowUpIcon, 
+  UserCircleIcon,
+  BookOpenIcon,
+  SunIcon,
+  MoonIcon,
+  CameraIcon,
+  PhotoIcon,
+  DocumentIcon,
+  FireIcon,
+  StarIcon,
+  ArrowRightOnRectangleIcon
+} from '@heroicons/react/24/outline';
 
 export default function StudentDashboardPage() {
   const router = useRouter();
@@ -9,11 +23,9 @@ export default function StudentDashboardPage() {
   const [error, setError] = useState('');
 
   // UI state
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
-  const [language, setLanguage] = useState('id');
-  const [showSettings, setShowSettings] = useState(false);
   const [showUploadPopup, setShowUploadPopup] = useState(false);
 
   // Chat state
@@ -21,14 +33,18 @@ export default function StudentDashboardPage() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const textareaRef = useRef(null);
 
-  // Settings
-  const [subject, setSubject] = useState('Matematika');
-  const [grade, setGrade] = useState('');
-  const [topic, setTopic] = useState('');
+  // Settings (persisted to localStorage)
   const [mode, setMode] = useState('homework');
+  const [grade, setGrade] = useState('');
+  const [curriculum, setCurriculum] = useState('Kurikulum Merdeka');
+  const [subject, setSubject] = useState('Matematika');
+  const [topic, setTopic] = useState('');
+  const [otherTopic, setOtherTopic] = useState('');
 
   // Data from API
   const [recentSessions, setRecentSessions] = useState([]);
@@ -44,12 +60,32 @@ export default function StudentDashboardPage() {
     else document.documentElement.classList.remove('dark');
   }, []);
 
+  // Load preferences from localStorage
+  useEffect(() => {
+    const savedMode = localStorage.getItem('student_mode');
+    const savedGrade = localStorage.getItem('student_grade');
+    const savedCurriculum = localStorage.getItem('student_curriculum');
+    const savedSubject = localStorage.getItem('student_subject');
+    if (savedMode) setMode(savedMode);
+    if (savedGrade) setGrade(savedGrade);
+    if (savedCurriculum) setCurriculum(savedCurriculum);
+    if (savedSubject) setSubject(savedSubject);
+  }, []);
+
+  // Save preferences to localStorage
+  useEffect(() => {
+    localStorage.setItem('student_mode', mode);
+    if (grade) localStorage.setItem('student_grade', grade);
+    if (curriculum) localStorage.setItem('student_curriculum', curriculum);
+    if (subject) localStorage.setItem('student_subject', subject);
+  }, [mode, grade, curriculum, subject]);
+
   // Responsive sidebar
   useEffect(() => {
     const check = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      if (!mobile) setSidebarOpen(true);
+      if (!mobile) setSidebarOpen(false);
       else setSidebarOpen(false);
     };
     check();
@@ -65,7 +101,7 @@ export default function StudentDashboardPage() {
         const json = await res.json();
         if (!res.ok || !json.success) throw new Error(json.message || 'Gagal memuat profil');
         setStudent(json.data);
-        setGrade(json.data.grade?.toString() || '');
+        if (!grade) setGrade(json.data.grade?.toString() || '');
       } catch (err) {
         setError(err.message);
         if (err.message.includes('Unauthorized')) router.push('/student/login');
@@ -74,7 +110,7 @@ export default function StudentDashboardPage() {
       }
     }
     loadProfile();
-  }, [router]);
+  }, [router, grade]);
 
   const loadRecentSessions = useCallback(async () => {
     try {
@@ -100,6 +136,14 @@ export default function StudentDashboardPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 128) + 'px';
+    }
+  }, [inputText]);
+
   const handleNewChat = () => {
     setActiveSessionId(null);
     setMessages([]);
@@ -119,41 +163,77 @@ export default function StudentDashboardPage() {
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
+  // Streaming sendMessage
   const sendMessage = async () => {
     if (!inputText.trim()) return;
+
     const userMessage = { role: 'user', content: inputText, created_at: new Date().toISOString() };
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = inputText;
     setInputText('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setChatLoading(true);
+    setError('');
+
+    // Untuk mode Homework: tidak kirim grade & topic (biar AI fleksibel)
+    const payload = {
+      subject,
+      mode,
+      questionText: currentInput,
+    };
+    if (mode !== 'homework') {
+      payload.grade = grade;
+      payload.topic = topic || 'general';
+    } else {
+      payload.grade = '';
+      payload.topic = '';
+    }
+
     try {
       const res = await fetch('/api/student/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          subject,
-          topic: topic || 'general',
-          grade,
-          mode,
-          questionText: inputText,
-          clueUsedCount: 0,
-          attempts: 1,
-        }),
+        body: JSON.stringify(payload),
       });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.message || 'Gagal mengirim pesan');
-      const aiMessage = {
-        role: 'assistant',
-        content: json.data.response,
-        created_at: new Date().toISOString(),
-        xp: json.data.xpEarned,
-      };
-      setMessages(prev => [...prev, aiMessage]);
+
+      if (!res.ok) throw new Error('Gagal terhubung ke AI Tutor');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      const aiMessageId = Date.now();
+      let accumulatedText = '';
+
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: '', created_at: new Date().toISOString(), id: aiMessageId, isStreaming: true }
+      ]);
+      setStreamingMessageId(aiMessageId);
+      setChatLoading(false);
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        accumulatedText += chunk;
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === aiMessageId ? { ...msg, content: accumulatedText } : msg
+          )
+        );
+      }
+
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === aiMessageId ? { ...msg, isStreaming: false } : msg
+        )
+      );
+      setStreamingMessageId(null);
       await loadRecentSessions();
     } catch (err) {
       setError(err.message);
-    } finally {
       setChatLoading(false);
+    } finally {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   };
@@ -171,22 +251,11 @@ export default function StudentDashboardPage() {
     else document.documentElement.classList.remove('dark');
   };
 
-  const t = {
-    newChat: language === 'id' ? 'Obrolan Baru' : 'New Chat',
-    recentChats: language === 'id' ? 'Riwayat Chat' : 'Recent Chats',
-    leaderboard: language === 'id' ? 'Papan Peringkat' : 'Leaderboard',
-    viewAll: language === 'id' ? 'Lihat semua' : 'View all',
-    logout: language === 'id' ? 'Keluar' : 'Logout',
-    darkMode: language === 'id' ? 'Mode Gelap' : 'Dark Mode',
-    lightMode: language === 'id' ? 'Mode Terang' : 'Light Mode',
-    subject: language === 'id' ? 'Mata Pelajaran' : 'Subject',
-    grade: language === 'id' ? 'Kelas' : 'Grade',
-    topic: language === 'id' ? 'Topik' : 'Topic',
-    placeholder: language === 'id'
-      ? 'Tanyakan soalmu dan dapatkan bantuan langkah demi langkah...'
-      : 'Ask your question and get step-by-step help...',
-    greeting: language === 'id' ? 'Mulai belajar,' : "Let's start in,",
-    ready: language === 'id' ? 'Siap membantu' : 'Ready when you are',
+  const handleOtherTopicAdd = () => {
+    if (otherTopic.trim()) {
+      setTopic(otherTopic.trim());
+      setOtherTopic('');
+    }
   };
 
   if (loading) {
@@ -210,278 +279,248 @@ export default function StudentDashboardPage() {
           <div className="fixed inset-0 bg-black/40 z-20" onClick={() => setSidebarOpen(false)} />
         )}
 
-        {/* Top bar */}
-        <div className="fixed top-0 left-0 right-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
+        {/* Top Bar – Gemini Style (tanpa dropdown subject) */}
+        <div className="fixed top-0 left-0 right-0 z-30 bg-white/70 dark:bg-gray-900/70 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">
           <div className="flex items-center justify-between px-4 py-3 max-w-7xl mx-auto">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-2xl text-gray-700 dark:text-gray-200"
-            >
-              ☰
-            </button>
-            <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full p-1">
-              {['homework', 'practice', 'exam'].map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-full transition ${
-                    mode === m
-                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400'
-                  }`}
-                >
-                  {m === 'homework' ? 'Homework' : m === 'practice' ? 'Practice' : 'Exam'}
-                </button>
-              ))}
+            <div className="flex items-center gap-4">
+              {/* Logo */}
+              <div className="text-xl font-bold text-blue-600 dark:text-blue-400">MindSeek</div>
+              <div className="h-6 w-px bg-gray-200 dark:bg-gray-700" />
+              
+              {/* Mode Dropdown (satu-satunya dropdown di top bar) */}
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value)}
+                className="bg-transparent font-medium text-gray-800 dark:text-gray-200 text-base outline-none cursor-pointer"
+              >
+                <option value="homework">Homework</option>
+                <option value="practice">Practice</option>
+                <option value="exam">Exam</option>
+              </select>
             </div>
-            <div className="flex gap-2">
+
+            <div className="flex items-center gap-3">
+              {/* Book icon to toggle sidebar (semua pengaturan ada di sini) */}
               <button
-                onClick={() => setLanguage('id')}
-                className={`px-2 py-1 text-sm font-medium rounded ${
-                  language === 'id'
-                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                    : 'text-gray-600 dark:text-gray-400'
-                }`}
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
+                title="Pengaturan Belajar"
               >
-                ID
+                <BookOpenIcon className="w-5 h-5" />
               </button>
+
+              {/* Dark mode toggle */}
               <button
-                onClick={() => setLanguage('en')}
-                className={`px-2 py-1 text-sm font-medium rounded ${
-                  language === 'en'
-                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                    : 'text-gray-600 dark:text-gray-400'
-                }`}
+                onClick={toggleDarkMode}
+                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
               >
-                EN
+                {darkMode ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
               </button>
+
+              {/* Avatar */}
+              <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">
+                {student?.name?.charAt(0) || 'S'}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Sidebar (collapsible) */}
+        {/* Sidebar (Settings) - muncul dari kanan, berisi semua kontrol */}
         <aside
-          className={`fixed top-14 bottom-0 z-20 w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          } ${isMobile ? 'shadow-xl' : ''}`}
+          className={`fixed top-0 bottom-0 z-40 w-80 bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
+            sidebarOpen ? 'translate-x-0' : 'translate-x-full'
+          } right-0`}
         >
-          <div className="flex-1 overflow-y-auto p-5 space-y-6">
-            <button
-              onClick={handleNewChat}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition"
-            >
-              💬 {t.newChat}
+          <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-white">Pengaturan Belajar</h2>
+            <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+              ✕
             </button>
-
+          </div>
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
             <div>
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">{t.recentChats}</h3>
-              <div className="space-y-1">
-                {recentSessions.slice(0, 10).map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => handleLoadSession(s.id)}
-                    className="w-full text-left px-3 py-2 rounded-lg text-base text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
-                  >
-                    💬 <span className="truncate">{s.topic || 'Diskusi'}</span>
-                  </button>
-                ))}
-                {recentSessions.length === 0 && (
-                  <p className="text-sm text-gray-400 px-3 py-2">Belum ada chat</p>
-                )}
-              </div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kurikulum</label>
+              <select
+                value={curriculum}
+                onChange={(e) => setCurriculum(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+              >
+                <option>Kurikulum Merdeka</option>
+                <option>Kurikulum 2013</option>
+                <option>Cambridge</option>
+                <option>IB</option>
+              </select>
             </div>
-
             <div>
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t.leaderboard}</h3>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Grade</label>
+              <select
+                value={grade}
+                onChange={(e) => setGrade(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+              >
+                {[...Array(12)].map((_, i) => (
+                  <option key={i+1}>{i+1}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
+              <select
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+              >
+                <option>Matematika</option>
+                <option>Fisika</option>
+                <option>Biologi</option>
+                <option>Kimia</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Topic (Standar)</label>
+              <select
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+              >
+                <option value="">Pilih topik (opsional)</option>
+                <option>Penjumlahan</option>
+                <option>Pengurangan</option>
+                <option>Perkalian</option>
+                <option>Pembagian</option>
+                <option>Pecahan</option>
+                <option>Eksponen</option>
+                <option>Logaritma</option>
+                <option>Aljabar</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Other Topics</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={otherTopic}
+                  onChange={(e) => setOtherTopic(e.target.value)}
+                  placeholder="Tambah topik sendiri..."
+                  className="flex-1 px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                />
                 <button
-                  onClick={() => router.push('/student/leaderboard')}
-                  className="text-xs text-blue-600 hover:underline"
+                  onClick={handleOtherTopicAdd}
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
-                  {t.viewAll}
+                  +
                 </button>
               </div>
-              <div className="space-y-2">
-                {leaderboard.map((item) => (
-                  <div key={item.rank} className="flex justify-between text-sm">
-                    <span className="text-gray-500 w-6">#{item.rank}</span>
-                    <span className="flex-1 text-gray-800 dark:text-gray-200 truncate">{item.name}</span>
-                    <span className="text-gray-600 dark:text-gray-400">{item.total_xp} XP</span>
-                  </div>
-                ))}
-              </div>
+              {otherTopic && <p className="text-xs text-gray-500 mt-1">Tekan + untuk menambah</p>}
             </div>
           </div>
-
-          {/* Profile & Settings */}
+          {/* Profile & XP di bawah sidebar (statis) */}
           <div className="border-t border-gray-200 dark:border-gray-700 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-xl">
-                  👤
+            <div className="flex items-center gap-3">
+              <UserCircleIcon className="w-10 h-10 text-gray-400" />
+              <div>
+                <p className="font-semibold text-gray-800 dark:text-white">{student?.name || 'Siswa'}</p>
+                <div className="flex gap-3 text-xs text-gray-500 dark:text-gray-400">
+                  <span>{student?.total_xp || 0} XP</span>
+                  <span><FireIcon className="w-3 h-3 inline" /> {student?.current_streak || 0}</span>
+                  <span><StarIcon className="w-3 h-3 inline" /> {student?.longest_streak || 0}</span>
                 </div>
-                <div className="text-sm">
-                  <p className="font-semibold text-gray-800 dark:text-white">{student?.name || 'Siswa'}</p>
-                  <div className="flex gap-3 text-xs text-gray-500 dark:text-gray-400">
-                    <span>{student?.total_xp || 0} XP</span>
-                    <span>🔥 {student?.current_streak || 0}</span>
-                    <span>⭐ {student?.longest_streak || 0}</span>
-                    <span>👑 0</span>
-                  </div>
-                </div>
-              </div>
-              <div className="relative">
-                <button
-                  onClick={() => setShowSettings(!showSettings)}
-                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-                >
-                  ⚙️
-                </button>
-                {showSettings && (
-                  <div className="absolute bottom-full right-0 mb-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-3 z-30">
-                    <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">📚 {t.subject}</div>
-                    <select
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border rounded-lg mb-3 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                    >
-                      <option>Matematika</option>
-                      <option>Fisika</option>
-                      <option>Biologi</option>
-                      <option>Kimia</option>
-                    </select>
-                    <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">🎓 {t.grade}</div>
-                    <select
-                      value={grade}
-                      onChange={(e) => setGrade(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border rounded-lg mb-3 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                    >
-                      {[...Array(12)].map((_, i) => (
-                        <option key={i + 1}>{i + 1}</option>
-                      ))}
-                    </select>
-                    <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">📖 {t.topic}</div>
-                    <input
-                      type="text"
-                      value={topic}
-                      onChange={(e) => setTopic(e.target.value)}
-                      placeholder="Opsional"
-                      className="w-full px-3 py-2 text-sm border rounded-lg mb-3 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                    />
-                    <button
-                      onClick={toggleDarkMode}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg mb-2"
-                    >
-                      {darkMode ? '☀️' : '🌙'} {darkMode ? t.lightMode : t.darkMode}
-                    </button>
-                    <button
-                      onClick={handleLogout}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-                    >
-                      🚪 {t.logout}
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
+            <button
+              onClick={handleLogout}
+              className="mt-3 flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            >
+              <ArrowRightOnRectangleIcon className="w-4 h-4" /> Keluar
+            </button>
           </div>
         </aside>
 
-        {/* Main chat area – clean, wide, balanced */}
-        <main
-          className={`pt-14 transition-all duration-300 ${
-            !isMobile && sidebarOpen ? 'ml-80' : 'ml-0'
-          }`}
-        >
-          <div className="max-w-3xl mx-auto px-6 py-10 flex flex-col min-h-[calc(100vh-56px)]">
-            {/* Chat content */}
-            <div className="flex-1 overflow-y-auto pb-10">
+        {/* Main Chat Area – Borderless Gemini Style */}
+        <main className="pt-14">
+          <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col min-h-[calc(100vh-56px)]">
+            {/* Chat messages container */}
+            <div className="flex-1 overflow-y-auto pb-6 space-y-8">
               {messages.length === 0 && !chatLoading ? (
-                <div className="flex flex-col items-center justify-center text-center space-y-6 min-h-[60vh]">
-                  <div className="w-28 h-28 flex items-center justify-center text-6xl font-bold text-blue-600">🧠</div>
+                <div className="flex flex-col items-center justify-center text-center space-y-4 min-h-[60vh]">
+                  <div className="text-7xl font-bold text-blue-600">🧠</div>
                   <h2 className="text-3xl md:text-4xl font-light text-gray-800 dark:text-gray-100">
-                    {t.greeting} {student?.name || 'Siswa'}.
+                    Mulai belajar, {student?.name || 'Siswa'}.
                   </h2>
-                  <p className="text-base md:text-lg text-gray-500 dark:text-gray-400">{t.ready}</p>
+                  <p className="text-base md:text-lg text-gray-500 dark:text-gray-400">Siap membantu</p>
                 </div>
               ) : (
-                <div className="space-y-6">
+                <>
                   {messages.map((msg, idx) => (
                     <div
                       key={idx}
                       className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div
-                        className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-5 py-3 text-base md:text-lg ${
-                          msg.role === 'user'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100'
-                        }`}
-                      >
+                      <div className={`max-w-[85%] text-base md:text-lg ${msg.role === 'user' ? 'text-gray-800 dark:text-white' : 'text-gray-700 dark:text-gray-200'}`}>
                         <div className="whitespace-pre-wrap">{msg.content}</div>
-                        {msg.xp && <div className="text-xs mt-1 opacity-70">+{msg.xp} XP</div>}
+                        {msg.xp && <div className="text-xs text-gray-400 mt-1">+{msg.xp} XP</div>}
+                        {msg.isStreaming && <span className="gemini-streaming inline-block ml-1"></span>}
                       </div>
                     </div>
                   ))}
-                  {chatLoading && (
+                  {chatLoading && !streamingMessageId && (
                     <div className="flex justify-start">
-                      <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl px-5 py-3">
-                        <div className="flex gap-1">
-                          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
-                          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                          <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                        </div>
-                      </div>
+                      <div className="text-gray-500 dark:text-gray-400">Ai Mi sedang mengetik...</div>
                     </div>
                   )}
                   <div ref={messagesEndRef} />
-                </div>
+                </>
               )}
             </div>
 
-            {/* Floating input pill – wide, comfortable */}
+            {/* Floating Input Pill */}
             <div className="relative mt-auto pt-4">
-              <div className="flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full shadow-sm hover:shadow transition">
+              <div className="flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full shadow-sm focus-within:shadow-md transition">
                 <div className="relative">
                   <button
                     onClick={() => setShowUploadPopup(!showUploadPopup)}
-                    className="p-3 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 text-xl"
+                    className="p-3 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300"
                   >
-                    ➕
+                    <PlusIcon className="w-5 h-5" />
                   </button>
                   {showUploadPopup && (
-                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-1 z-50">
-                      <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg">
-                        📷 Camera
+                    <div className="absolute bottom-full left-0 mb-2 w-44 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-1 z-50">
+                      <button className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg">
+                        <CameraIcon className="w-4 h-4" /> Camera
                       </button>
-                      <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
-                        🖼️ Gallery
+                      <button className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <PhotoIcon className="w-4 h-4" /> Gallery
                       </button>
-                      <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg">
-                        📁 File
+                      <button className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg">
+                        <DocumentIcon className="w-4 h-4" /> File
                       </button>
                     </div>
                   )}
                 </div>
-                <input
-                  ref={inputRef}
-                  type="text"
+                <textarea
+                  ref={textareaRef}
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                  placeholder={t.placeholder}
-                  className="flex-1 py-3 px-3 bg-transparent outline-none text-base md:text-lg text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  placeholder="Tanyakan soalmu dan dapatkan bantuan langkah demi langkah..."
+                  rows={1}
+                  className="flex-1 py-3 px-2 bg-transparent outline-none resize-none overflow-y-auto max-h-32 text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                 />
                 <button
                   onClick={sendMessage}
                   disabled={!inputText.trim()}
-                  className={`p-3 rounded-full transition text-xl ${
+                  className={`p-3 rounded-full transition ${
                     inputText.trim()
                       ? 'bg-blue-600 text-white hover:bg-blue-700'
                       : 'text-gray-400 cursor-not-allowed'
                   }`}
                 >
-                  ↑
+                  <ArrowUpIcon className="w-5 h-5" />
                 </button>
               </div>
             </div>
