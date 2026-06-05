@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -10,10 +10,30 @@ export default function StudentLoginPage() {
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [remainingAttempts, setRemainingAttempts] = useState(null);
+  const [blockedUntil, setBlockedUntil] = useState(null);
+  const [countdown, setCountdown] = useState(0);
 
   function sanitizeDigits(value) {
     return String(value || '').replace(/\D/g, '');
   }
+
+  // Countdown timer for block
+  useEffect(() => {
+    if (!blockedUntil) return;
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((blockedUntil - Date.now()) / 1000));
+      setCountdown(remaining);
+      if (remaining <= 0) {
+        setBlockedUntil(null);
+        setRemainingAttempts(null);
+        setServerError('');
+      }
+    };
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [blockedUntil]);
 
   function validateForm() {
     const nextErrors = {};
@@ -39,6 +59,7 @@ export default function StudentLoginPage() {
   async function handleSubmit(event) {
     event.preventDefault();
     setServerError('');
+    setRemainingAttempts(null);
 
     if (!validateForm()) {
       return;
@@ -63,10 +84,13 @@ export default function StudentLoginPage() {
       const result = await response.json().catch(() => null);
 
       if (!response.ok) {
-        // Tangani rate limiting (429)
+        // Handle rate limiting response (429)
         if (response.status === 429) {
-          setServerError(result?.message || 'Terlalu banyak percobaan gagal. Coba lagi nanti.');
-        } else if (response.status === 401) {
+          const blockedUntilTime = result?.data?.blockedUntil ? new Date(result.data.blockedUntil).getTime() : Date.now() + 15 * 60 * 1000;
+          setBlockedUntil(blockedUntilTime);
+          setServerError(result?.message || 'Terlalu banyak percobaan. Coba lagi nanti.');
+        } else if (result?.remainingAttempts !== undefined) {
+          setRemainingAttempts(result.remainingAttempts);
           setServerError(result?.message || 'Student ID atau PIN salah.');
         } else {
           setServerError(result?.message || 'Login gagal. Silakan coba lagi.');
@@ -93,6 +117,7 @@ export default function StudentLoginPage() {
       <div className="min-h-screen bg-slate-950 text-white">
         <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-4 py-10 sm:px-6 lg:px-8">
           <div className="grid w-full overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-2xl backdrop-blur md:grid-cols-2">
+            {/* Left side - info */}
             <div className="hidden flex-col justify-between bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-10 md:flex">
               <div>
                 <div className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white/90">
@@ -123,6 +148,7 @@ export default function StudentLoginPage() {
               </div>
             </div>
 
+            {/* Right side - form */}
             <div className="bg-white p-6 text-slate-900 sm:p-8 md:p-10">
               <div className="mx-auto w-full max-w-md">
                 <div className="mb-8">
@@ -139,10 +165,7 @@ export default function StudentLoginPage() {
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div>
-                    <label
-                      htmlFor="studentId"
-                      className="mb-2 block text-sm font-semibold text-slate-700"
-                    >
+                    <label htmlFor="studentId" className="mb-2 block text-sm font-semibold text-slate-700">
                       Student ID
                     </label>
                     <input
@@ -205,15 +228,21 @@ export default function StudentLoginPage() {
                     )}
                   </div>
 
-                  {serverError ? (
+                  {serverError && (
                     <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                       {serverError}
+                      {remainingAttempts !== null && (
+                        <p className="mt-1 text-xs">Sisa percobaan: {remainingAttempts}</p>
+                      )}
+                      {countdown > 0 && (
+                        <p className="mt-1 text-xs">Coba lagi dalam {countdown} detik.</p>
+                      )}
                     </div>
-                  ) : null}
+                  )}
 
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || (blockedUntil && blockedUntil > Date.now())}
                     className="inline-flex w-full items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isSubmitting ? 'Memproses...' : 'Login'}
@@ -221,12 +250,11 @@ export default function StudentLoginPage() {
                 </form>
 
                 <div className="mt-6 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                  {/* Link ke parent dashboard untuk reset PIN */}
                   <Link
-                    href="/dashboard"
+                    href="/login"
                     className="font-medium text-indigo-600 transition hover:text-indigo-700"
                   >
-                    Lupa PIN? Hubungi Orang Tua
+                    Lupa PIN? Hubungi orang tua
                   </Link>
 
                   <Link
@@ -241,7 +269,7 @@ export default function StudentLoginPage() {
                   <p className="text-sm font-semibold text-slate-800">Tips</p>
                   <p className="mt-1 text-sm leading-6 text-slate-600">
                     Pastikan Student ID dan PIN diisi lengkap 6 digit angka sebelum menekan tombol
-                    login. Jika gagal 3 kali, akun akan diblokir sementara 15 menit.
+                    login. Jika lupa PIN, minta bantuan orang tua untuk mereset.
                   </p>
                 </div>
               </div>
