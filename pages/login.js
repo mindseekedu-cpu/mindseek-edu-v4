@@ -1,6 +1,6 @@
 import Head from 'next/head'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 
 const initialForm = {
@@ -44,6 +44,31 @@ export default function LoginPage() {
   const [errors, setErrors] = useState(initialErrors)
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [recaptchaToken, setRecaptchaToken] = useState(null)
+  const recaptchaRef = useRef(null)
+
+  // Load reCAPTCHA script jika site key tersedia
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY && typeof window !== 'undefined' && !window.grecaptcha) {
+      const script = document.createElement('script')
+      script.src = `https://www.google.com/recaptcha/api.js?render=${process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}`
+      script.async = true
+      script.defer = true
+      document.head.appendChild(script)
+    }
+  }, [])
+
+  const getRecaptchaToken = async () => {
+    if (!process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) return null
+    if (typeof window === 'undefined') return null
+    if (!window.grecaptcha) return null
+    try {
+      return await window.grecaptcha.execute(process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY, { action: 'login' })
+    } catch (err) {
+      console.warn('reCAPTCHA error:', err)
+      return null
+    }
+  }
 
   function handleChange(e) {
     const { name, value } = e.target
@@ -61,23 +86,37 @@ export default function LoginPage() {
     }
 
     setIsLoading(true)
+    setErrors(initialErrors)
+
+    let captcha = null
+    try {
+      captcha = await getRecaptchaToken()
+    } catch (err) {
+      console.warn('reCAPTCHA unavailable, proceeding without')
+    }
+
     try {
       const res = await fetch('/api/parent/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: form.email.trim().toLowerCase(),
-          password: form.password
+          password: form.password,
+          recaptcha_token: captcha
         })
       })
 
       const data = await res.json()
 
       if (!res.ok) {
-        setErrors((prev) => ({
-          ...prev,
-          form: data.message || 'Email atau password salah. Silakan coba lagi.'
-        }))
+        // Tangani berbagai kode error dari API
+        if (res.status === 403 && data.message?.toLowerCase().includes('verifikasi')) {
+          setErrors((prev) => ({ ...prev, form: 'Email belum diverifikasi. Silakan cek inbox/spam Anda untuk link verifikasi.' }))
+        } else if (res.status === 429) {
+          setErrors((prev) => ({ ...prev, form: data.message || 'Terlalu banyak percobaan. Coba lagi nanti.' }))
+        } else {
+          setErrors((prev) => ({ ...prev, form: data.message || 'Email atau password salah.' }))
+        }
         return
       }
 
@@ -87,12 +126,11 @@ export default function LoginPage() {
         router.push('/dashboard')
       }
     } catch (err) {
-      setErrors((prev) => ({
-        ...prev,
-        form: 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.'
-      }))
+      setErrors((prev) => ({ ...prev, form: 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.' }))
     } finally {
       setIsLoading(false)
+      // Reset reCAPTCHA token untuk next action
+      if (window.grecaptcha) window.grecaptcha.reset()
     }
   }
 
@@ -141,6 +179,7 @@ export default function LoginPage() {
                 onChange={handleChange}
                 placeholder="contoh@email.com"
                 className={`input-base ${errors.email ? 'border-red-400 focus:ring-red-400 focus:border-red-400' : ''}`}
+                disabled={isLoading}
               />
               {errors.email && (
                 <p className="mt-1 text-xs text-red-500">{errors.email}</p>
@@ -170,6 +209,7 @@ export default function LoginPage() {
                   onChange={handleChange}
                   placeholder="Masukkan password Anda"
                   className={`input-base pr-10 ${errors.password ? 'border-red-400 focus:ring-red-400 focus:border-red-400' : ''}`}
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
@@ -213,6 +253,10 @@ export default function LoginPage() {
             </Link>
           </p>
 
+          {/* Catatan tentang verifikasi email */}
+          <div className="mt-4 text-center text-xs text-gray-400">
+            Pastikan email sudah diverifikasi sebelum login. Cek folder spam jika tidak menemukan email verifikasi.
+          </div>
         </div>
       </main>
     </>
