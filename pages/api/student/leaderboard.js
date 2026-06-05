@@ -52,10 +52,17 @@ export default async function handler(req, res) {
     const limit = clampLimit(req.query?.limit, 10)
     const sinceISO = getLast7DaysStartISO()
 
-    // 1) Ambil daftar siswa per grade (untuk filter + mapping nama)
+    // 1) Ambil daftar siswa per grade yang belum dihapus, dengan parent aktif
     const { data: students, error: studentsError } = await supabase
       .from('students_profile')
-      .select('id, student_id, student_name')
+      .select(`
+        id,
+        student_id,
+        student_name,
+        parent:parent_profile (
+          is_active
+        )
+      `)
       .eq('grade', grade)
       .is('deleted_at', null)
 
@@ -63,19 +70,22 @@ export default async function handler(req, res) {
       throw new Error(`Gagal mengambil data siswa: ${studentsError.message}`)
     }
 
-    const studentRows = Array.isArray(students) ? students : []
-    if (studentRows.length === 0) {
+    // Filter: hanya siswa dengan parent aktif (is_active = true)
+    const activeStudents = (students || []).filter(
+      (s) => s.parent?.is_active !== false
+    )
+
+    if (activeStudents.length === 0) {
       return res.status(200).json({
         success: true,
         data: [],
       })
     }
 
-    const internalStudentIds = studentRows.map((s) => s.id)
-    const studentMap = new Map(studentRows.map((s) => [String(s.id), s]))
+    const internalStudentIds = activeStudents.map((s) => s.id)
+    const studentMap = new Map(activeStudents.map((s) => [String(s.id), s]))
 
-    // 2) Ambil question_logs 7 hari terakhir untuk siswa-siswa tsb (tanpa aggregate di SQL)
-    // NOTE: untuk MVP, asumsi jumlah rows masih aman. Jika besar, nanti bisa dipaginasi.
+    // 2) Ambil question_logs 7 hari terakhir untuk siswa-siswa tsb
     const { data: logs, error: logsError } = await supabase
       .from('question_logs')
       .select('student_id, xp_earned')
@@ -88,7 +98,7 @@ export default async function handler(req, res) {
 
     const logRows = Array.isArray(logs) ? logs : []
 
-    // 3) Hitung total XP mingguan + jumlah soal per studentId di JS
+    // 3) Hitung total XP mingguan + jumlah soal per studentId
     const statsByStudentId = new Map()
     for (const row of logRows) {
       const sid = String(row.student_id || '')
@@ -135,6 +145,7 @@ export default async function handler(req, res) {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Terjadi kesalahan pada server'
+    console.error('[leaderboard] Error:', error)
     return res.status(500).json({
       success: false,
       message,
