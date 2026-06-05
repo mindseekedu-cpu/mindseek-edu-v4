@@ -11,29 +11,23 @@ export default function HomePage() {
       </Head>
 
       <main className="min-h-screen bg-white flex flex-col">
-        {/* Navbar dengan link ke Paket & Harga */}
+        {/* Navbar hanya berisi login orang tua & login siswa */}
         <nav className="w-full px-6 py-4 flex items-center justify-between border-b border-gray-100 shadow-sm">
           <span className="text-xl font-bold text-blue-600 tracking-tight">
             MindSeek Edu
           </span>
           <div className="flex gap-3">
             <Link
-              href="/pricing"
-              className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-blue-600 transition"
-            >
-              Paket & Harga
-            </Link>
-            <Link
               href="/login"
               className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50"
             >
-              Login
+              Login (Orang Tua)
             </Link>
             <Link
-              href="/register"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              href="/student/login"
+              className="px-4 py-2 text-sm font-medium text-green-600 border border-green-600 rounded-md hover:bg-green-50"
             >
-              Daftar
+              Login (Siswa)
             </Link>
           </div>
         </nav>
@@ -52,7 +46,7 @@ export default function HomePage() {
               bukan sekadar memberi jawaban.
             </p>
 
-            {/* Tombol aksi utama */}
+            {/* Tombol aksi utama di hero */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
                 href="/register"
@@ -65,12 +59,6 @@ export default function HomePage() {
                 className="w-full sm:w-auto px-8 py-3 text-base font-semibold text-blue-600 bg-white border border-blue-600 rounded-lg hover:bg-blue-50"
               >
                 Lihat Paket & Harga
-              </Link>
-              <Link
-                href="/student/login"
-                className="w-full sm:w-auto px-8 py-3 text-base font-semibold text-green-600 bg-white border border-green-600 rounded-lg hover:bg-green-50"
-              >
-                Login Siswa
               </Link>
             </div>
 
