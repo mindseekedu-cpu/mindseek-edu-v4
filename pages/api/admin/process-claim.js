@@ -91,7 +91,6 @@ async function updateParentPoints(parentId, newPoints) {
 }
 
 async function insertPointsTransaction({ parentId, type, amount, referenceId, note }) {
-  // Best-effort schema: common columns used in points ledgers.
   const payload = {
     parent_id: parentId,
     type,
@@ -106,6 +105,18 @@ async function insertPointsTransaction({ parentId, type, amount, referenceId, no
 }
 
 async function updateClaimStatus(table, claimId, status, extra = {}) {
+  // Pastikan claim masih pending sebelum update
+  const { data: existing, error: checkError } = await supabase
+    .from(table)
+    .select("status")
+    .eq("id", claimId)
+    .single();
+
+  if (checkError) throw new Error(`Claim not found: ${checkError.message}`);
+  if (existing.status !== "pending") {
+    throw new Error(`Claim sudah ${existing.status}, tidak bisa diproses ulang.`);
+  }
+
   const { data, error } = await supabase
     .from(table)
     .update({ status, ...extra })
@@ -180,8 +191,15 @@ export default async function handler(req, res) {
 
     const table = t === "withdrawal" ? "withdrawal_claims" : "redemption_claims";
 
-    // Load claim to get parent_id and points amount.
+    // Load claim to get parent_id and points amount, and verify status is pending
     const claim = await getClaim(table, claimId);
+    if (claim.status !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: `Klaim sudah ${claim.status}, tidak dapat diproses lagi.`
+      });
+    }
+
     const claimParentId = claim.parent_id || claim.parentId;
     if (!claimParentId) {
       return res.status(500).json({ success: false, message: "Claim missing parent_id." });
@@ -270,6 +288,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ success: true, data: { claim: rejectedClaim, parent: updatedParent } });
   } catch (e) {
-    return res.status(500).json({ success: false, message: e?.message || "Internal server error." });
+    const message = e?.message || "Internal server error.";
+    return res.status(500).json({ success: false, message });
   }
 }
