@@ -20,6 +20,7 @@ export default function StudentDashboardPage() {
   const [inputText, setInputText] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
   const [subject, setSubject] = useState('Matematika');
   const [grade, setGrade] = useState('');
@@ -29,7 +30,7 @@ export default function StudentDashboardPage() {
   const [recentSessions, setRecentSessions] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
 
-  // Cek preferensi dark mode sistem & local storage
+  // Dark mode system preference
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -52,7 +53,7 @@ export default function StudentDashboardPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Load profile & data
+  // Load profile
   useEffect(() => {
     async function loadProfile() {
       try {
@@ -99,6 +100,7 @@ export default function StudentDashboardPage() {
     setActiveSessionId(null);
     setMessages([]);
     if (isMobile) setSidebarOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 100);
   };
 
   const handleLoadSession = async (sessionId) => {
@@ -110,6 +112,7 @@ export default function StudentDashboardPage() {
       if (res.ok && json.success) setMessages(json.data || []);
     } catch (err) { console.error(err); }
     if (isMobile) setSidebarOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 100);
   };
 
   const sendMessage = async () => {
@@ -131,6 +134,7 @@ export default function StudentDashboardPage() {
       setMessages(prev => [...prev, aiMessage]);
       await loadRecentSessions();
     } catch (err) { setError(err.message); } finally { setChatLoading(false); }
+    setTimeout(() => inputRef.current?.focus(), 100);
   };
 
   const handleLogout = async () => {
@@ -168,6 +172,7 @@ export default function StudentDashboardPage() {
     <>
       <Head><title>Dashboard Siswa - MindSeek Edu</title></Head>
       <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-200">
+        {/* Mobile overlay */}
         {isMobile && sidebarOpen && (
           <div className="fixed inset-0 bg-black/50 z-20" onClick={() => setSidebarOpen(false)}></div>
         )}
@@ -194,77 +199,36 @@ export default function StudentDashboardPage() {
               ))}
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={() => setLanguage('id')}
-                className={`px-2 py-1 text-sm font-medium rounded ${
-                  language === 'id'
-                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                    : 'text-gray-600 dark:text-gray-400'
-                }`}
-              >
-                ID
-              </button>
-              <button
-                onClick={() => setLanguage('en')}
-                className={`px-2 py-1 text-sm font-medium rounded ${
-                  language === 'en'
-                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                    : 'text-gray-600 dark:text-gray-400'
-                }`}
-              >
-                EN
-              </button>
+              <button onClick={() => setLanguage('id')} className={`px-2 py-1 text-sm font-medium rounded ${language === 'id' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>ID</button>
+              <button onClick={() => setLanguage('en')} className={`px-2 py-1 text-sm font-medium rounded ${language === 'en' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}>EN</button>
             </div>
           </div>
         </div>
 
         {/* Sidebar */}
-        <aside
-          className={`fixed top-14 bottom-0 z-20 w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          } ${isMobile ? 'shadow-xl' : ''}`}
-        >
+        <aside className={`fixed top-14 bottom-0 z-20 w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${isMobile ? 'shadow-xl' : ''}`}>
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
-            <button
-              onClick={handleNewChat}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition"
-            >
-              💬 {t.newChat}
-            </button>
+            <button onClick={handleNewChat} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition">💬 {t.newChat}</button>
             <div>
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">{t.recentChats}</h3>
               <div className="space-y-1">
-                {recentSessions.slice(0, 10).map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => handleLoadSession(s.id)}
-                    className="w-full text-left px-3 py-2 rounded-lg text-base text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
-                  >
+                {recentSessions.slice(0,10).map(s => (
+                  <button key={s.id} onClick={() => handleLoadSession(s.id)} className="w-full text-left px-3 py-2 rounded-lg text-base text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2">
                     💬 <span className="truncate">{s.topic || 'Diskusi'}</span>
                   </button>
                 ))}
-                {recentSessions.length === 0 && <p className="text-sm text-gray-400 px-3 py-2">Belum ada chat</p>}
+                {recentSessions.length===0 && <p className="text-sm text-gray-400 px-3 py-2">Belum ada chat</p>}
               </div>
             </div>
             <div>
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t.leaderboard}</h3>
-                <button onClick={() => router.push('/student/leaderboard')} className="text-xs text-blue-600 hover:underline">
-                  {t.viewAll}
-                </button>
-              </div>
+              <div className="flex justify-between items-center mb-3"><h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t.leaderboard}</h3><button onClick={() => router.push('/student/leaderboard')} className="text-xs text-blue-600 hover:underline">{t.viewAll}</button></div>
               <div className="space-y-2">
-                {leaderboard.map((item) => (
-                  <div key={item.rank} className="flex justify-between text-sm">
-                    <span className="text-gray-500 w-6">#{item.rank}</span>
-                    <span className="flex-1 text-gray-800 dark:text-gray-200 truncate">{item.name}</span>
-                    <span className="text-gray-600 dark:text-gray-400">{item.total_xp} XP</span>
-                  </div>
+                {leaderboard.map(item => (
+                  <div key={item.rank} className="flex justify-between text-sm"><span className="text-gray-500 w-6">#{item.rank}</span><span className="flex-1 text-gray-800 dark:text-gray-200 truncate">{item.name}</span><span className="text-gray-600 dark:text-gray-400">{item.total_xp} XP</span></div>
                 ))}
               </div>
             </div>
           </div>
-
           {/* Profile & Settings */}
           <div className="border-t border-gray-200 dark:border-gray-700 p-4">
             <div className="flex items-center justify-between">
@@ -272,61 +236,21 @@ export default function StudentDashboardPage() {
                 <div className="w-10 h-10 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-xl">👤</div>
                 <div className="text-sm">
                   <p className="font-semibold text-gray-800 dark:text-white">{student?.name || 'Siswa'}</p>
-                  <div className="flex gap-3 text-xs text-gray-500 dark:text-gray-400">
-                    <span>{student?.total_xp || 0} XP</span>
-                    <span>🔥 {student?.current_streak || 0}</span>
-                    <span>⭐ {student?.longest_streak || 0}</span>
-                    <span>👑 0</span>
-                  </div>
+                  <div className="flex gap-3 text-xs text-gray-500 dark:text-gray-400"><span>{student?.total_xp || 0} XP</span><span>🔥 {student?.current_streak || 0}</span><span>⭐ {student?.longest_streak || 0}</span><span>👑 0</span></div>
                 </div>
               </div>
               <div className="relative">
-                <button onClick={() => setShowSettings(!showSettings)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
-                  ⚙️
-                </button>
+                <button onClick={() => setShowSettings(!showSettings)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">⚙️</button>
                 {showSettings && (
                   <div className="absolute bottom-full right-0 mb-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-3 z-30">
                     <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">📚 {t.subject}</div>
-                    <select
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border rounded-lg mb-3 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                    >
-                      <option>Matematika</option>
-                      <option>Fisika</option>
-                      <option>Biologi</option>
-                      <option>Kimia</option>
-                    </select>
+                    <select value={subject} onChange={e=>setSubject(e.target.value)} className="w-full px-3 py-2 text-sm border rounded-lg mb-3 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"><option>Matematika</option><option>Fisika</option><option>Biologi</option><option>Kimia</option></select>
                     <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">🎓 {t.grade}</div>
-                    <select
-                      value={grade}
-                      onChange={(e) => setGrade(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border rounded-lg mb-3 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                    >
-                      {[...Array(12)].map((_, i) => (
-                        <option key={i + 1}>{i + 1}</option>
-                      ))}
-                    </select>
+                    <select value={grade} onChange={e=>setGrade(e.target.value)} className="w-full px-3 py-2 text-sm border rounded-lg mb-3 bg-white dark:bg-gray-700 text-gray-800 dark:text-white">{[...Array(12)].map((_,i)=><option key={i+1}>{i+1}</option>)}</select>
                     <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">📖 {t.topic}</div>
-                    <input
-                      type="text"
-                      value={topic}
-                      onChange={(e) => setTopic(e.target.value)}
-                      placeholder="Opsional"
-                      className="w-full px-3 py-2 text-sm border rounded-lg mb-3 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                    />
-                    <button
-                      onClick={toggleDarkMode}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg mb-2"
-                    >
-                      {darkMode ? '☀️' : '🌙'} {darkMode ? t.lightMode : t.darkMode}
-                    </button>
-                    <button
-                      onClick={handleLogout}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-                    >
-                      🚪 {t.logout}
-                    </button>
+                    <input type="text" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Opsional" className="w-full px-3 py-2 text-sm border rounded-lg mb-3 bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
+                    <button onClick={toggleDarkMode} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg mb-2">{darkMode ? '☀️' : '🌙'} {darkMode ? t.lightMode : t.darkMode}</button>
+                    <button onClick={handleLogout} className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">🚪 {t.logout}</button>
                   </div>
                 )}
               </div>
@@ -336,26 +260,18 @@ export default function StudentDashboardPage() {
 
         {/* Main Chat Area */}
         <main className={`pt-14 transition-all duration-300 ${!isMobile && sidebarOpen ? 'ml-80' : 'ml-0'}`}>
-          <div className="max-w-3xl mx-auto px-4 py-8 flex flex-col min-h-[calc(100vh-56px)]">
+          <div className="max-w-3xl mx-auto px-4 pb-32 pt-8 flex flex-col min-h-[calc(100vh-56px)]">
             {messages.length === 0 && !chatLoading ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center space-y-5">
                 <div className="w-32 h-32 flex items-center justify-center text-6xl font-bold text-blue-600">🧠</div>
-                <h2 className="text-3xl font-light text-gray-800 dark:text-gray-200">
-                  {t.greeting} {student?.name || 'Siswa'}.
-                </h2>
+                <h2 className="text-3xl font-light text-gray-800 dark:text-gray-200">{t.greeting} {student?.name || 'Siswa'}.</h2>
                 <p className="text-base text-gray-400">{t.ready}</p>
               </div>
             ) : (
               <div className="flex-1 space-y-5 pb-6">
                 {messages.map((msg, idx) => (
                   <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div
-                      className={`max-w-[80%] rounded-2xl px-5 py-3 text-base ${
-                        msg.role === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'
-                      }`}
-                    >
+                    <div className={`max-w-[80%] rounded-2xl px-5 py-3 text-base ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'}`}>
                       <p className="whitespace-pre-wrap">{msg.content}</p>
                       {msg.xp && <p className="text-xs mt-1 opacity-70">+{msg.xp} XP</p>}
                     </div>
@@ -364,11 +280,7 @@ export default function StudentDashboardPage() {
                 {chatLoading && (
                   <div className="flex justify-start">
                     <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl px-5 py-3">
-                      <div className="flex gap-1">
-                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
-                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                      </div>
+                      <div className="flex gap-1"><span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span><span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay:'150ms'}}></span><span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay:'300ms'}}></span></div>
                     </div>
                   </div>
                 )}
@@ -380,18 +292,17 @@ export default function StudentDashboardPage() {
             <div className="relative mt-4">
               <div className="flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full shadow-sm">
                 <div className="relative">
-                  <button onClick={() => setShowUploadPopup(!showUploadPopup)} className="p-3 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 text-xl">
-                    ➕
-                  </button>
+                  <button onClick={() => setShowUploadPopup(!showUploadPopup)} className="p-3 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 text-xl">➕</button>
                   {showUploadPopup && (
-                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-2 z-30">
-                      <button className="flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg">📷 Camera</button>
-                      <button className="flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">🖼️ Gallery</button>
-                      <button className="flex items-center gap-3 w-full px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg">📁 File</button>
+                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-1 z-50">
+                      <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg">📷 Camera</button>
+                      <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">🖼️ Gallery</button>
+                      <button className="flex items-center gap-3 w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg">📁 File</button>
                     </div>
                   )}
                 </div>
                 <input
+                  ref={inputRef}
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
@@ -399,17 +310,7 @@ export default function StudentDashboardPage() {
                   placeholder={t.placeholder}
                   className="flex-1 py-3 px-3 bg-transparent outline-none text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                 />
-                <button
-                  onClick={sendMessage}
-                  disabled={!inputText.trim()}
-                  className={`p-3 rounded-full transition text-xl ${
-                    inputText.trim()
-                      ? 'bg-blue-600 text-white hover:bg-blue-700'
-                      : 'text-gray-400 cursor-not-allowed'
-                  }`}
-                >
-                  ↑
-                </button>
+                <button onClick={sendMessage} disabled={!inputText.trim()} className={`p-3 rounded-full transition text-xl ${inputText.trim() ? 'bg-blue-600 text-white hover:bg-blue-700' : 'text-gray-400 cursor-not-allowed'}`}>↑</button>
               </div>
             </div>
           </div>
