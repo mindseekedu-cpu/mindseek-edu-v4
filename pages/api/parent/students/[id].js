@@ -13,17 +13,18 @@ function normalizeId(value) {
 
 function validateUpdate(body) {
   const out = {};
+  const errors = [];
 
   if (body?.student_name !== undefined) {
     const name = String(body.student_name || "").trim();
-    if (name.length < 3) throw new Error("Student Name minimal 3 karakter");
+    if (name.length < 3) errors.push("Student Name minimal 3 karakter");
     out.student_name = name;
   }
 
   if (body?.grade !== undefined) {
     const gradeNum = Number(body.grade);
     if (!Number.isInteger(gradeNum) || gradeNum < 1 || gradeNum > 12) {
-      throw new Error("Grade harus 1-12");
+      errors.push("Grade harus 1-12");
     }
     out.grade = gradeNum;
   }
@@ -34,6 +35,9 @@ function validateUpdate(body) {
 
   if (body?.student_email !== undefined) {
     const val = String(body.student_email || "").trim();
+    if (val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+      errors.push("Format Student Email tidak valid");
+    }
     out.student_email = val === "" ? null : val;
   }
 
@@ -50,7 +54,7 @@ function validateUpdate(body) {
   if (body?.learning_style !== undefined) {
     const allowed = ["Visual", "Auditori", "Kinestetik", "BacaTulis", "Campuran"];
     const val = String(body.learning_style || "").trim() || "Campuran";
-    if (!allowed.includes(val)) throw new Error("Learning Style tidak valid");
+    if (!allowed.includes(val)) errors.push("Learning Style tidak valid");
     out.learning_style = val;
   }
 
@@ -59,9 +63,16 @@ function validateUpdate(body) {
     out.additional_notes = val === "" ? null : val;
   }
 
-  // PIN intentionally not updatable here.
+  // PIN dan student_id tidak boleh diubah
   if (body?.pin !== undefined || body?.pin_confirm !== undefined || body?.pin_confirmation !== undefined) {
-    throw new Error("PIN tidak bisa diubah lewat endpoint ini");
+    errors.push("PIN tidak bisa diubah melalui endpoint ini. Gunakan fitur reset PIN terpisah.");
+  }
+  if (body?.student_id !== undefined) {
+    errors.push("Student ID tidak bisa diubah.");
+  }
+
+  if (errors.length > 0) {
+    throw new Error(errors.join(". "));
   }
 
   return out;
@@ -104,14 +115,23 @@ export default async function handler(req, res) {
 
       return res.status(200).json({ success: true, student });
     } catch (e) {
+      console.error("[GET /students/:id] Error:", e);
       return httpError(res, 500, e?.message || "Server error");
     }
   }
 
   if (req.method === "PUT") {
     try {
-      const updates = validateUpdate(req.body || {});
-      if (Object.keys(updates).length === 0) return httpError(res, 400, "Tidak ada field yang diupdate");
+      let updates;
+      try {
+        updates = validateUpdate(req.body || {});
+      } catch (validationError) {
+        return httpError(res, 400, validationError.message);
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return httpError(res, 400, "Tidak ada field yang diupdate");
+      }
 
       const existing = await getOwnedStudentOr404({ parentId, studentUuid });
       if (!existing) return httpError(res, 404, "Siswa tidak ditemukan");
@@ -130,13 +150,15 @@ export default async function handler(req, res) {
 
       return res.status(200).json({ success: true, student: data });
     } catch (e) {
+      console.error("[PUT /students/:id] Error:", e);
       const msg = e?.message || "Server error";
       const isValidation =
         msg.includes("minimal") ||
         msg.includes("Grade") ||
         msg.includes("Learning Style") ||
         msg.includes("PIN") ||
-        msg.includes("field");
+        msg.includes("field") ||
+        msg.includes("Student ID");
       return httpError(res, isValidation ? 400 : 500, msg);
     }
   }
@@ -144,18 +166,21 @@ export default async function handler(req, res) {
   if (req.method === "DELETE") {
     try {
       const existing = await getOwnedStudentOr404({ parentId, studentUuid });
-      if (!existing) return httpError(res, 404, "Siswa tidak ditemukan");
+      if (!existing) return httpError(res, 404, "Siswa tidak ditemukan atau sudah dihapus");
 
+      // Cek apakah sudah soft delete sebelumnya (redundant karena getOwnedStudentOr404 sudah filter deleted_at)
       const { error } = await supabase
         .from("students_profile")
         .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq("id", studentUuid)
-        .eq("parent_id", parentId);
+        .eq("parent_id", parentId)
+        .is("deleted_at", null); // pastikan belum dihapus
 
       if (error) throw error;
 
-      return res.status(200).json({ success: true });
+      return res.status(200).json({ success: true, message: "Siswa berhasil dihapus (soft delete)" });
     } catch (e) {
+      console.error("[DELETE /students/:id] Error:", e);
       return httpError(res, 500, e?.message || "Server error");
     }
   }
