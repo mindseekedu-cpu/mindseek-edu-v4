@@ -85,7 +85,7 @@ async function fetchSessionsMap(studentId) {
     .from('learning_sessions')
     .select('*')
     .eq('student_id', studentId)
-    .order('started_at', { ascending: false }); // FIXED: created_at -> started_at
+    .order('started_at', { ascending: false });
   if (error) {
     throw new Error(`Gagal mengambil learning_sessions: ${error.message}`);
   }
@@ -294,6 +294,22 @@ function buildAutoPilotTitle(studentName) {
   return `Auto-Pilot Remedial 15 Soal${suffix}`;
 }
 
+// Helper: Insert notifikasi ke tabel notifications
+async function createNotification({ parentId, studentId, title, message, type = 'auto_pilot' }) {
+  const { error } = await supabase.from('notifications').insert({
+    parent_id: parentId,
+    student_id: studentId,
+    title,
+    message,
+    type,
+    is_read: false,
+    created_at: new Date().toISOString(),
+  });
+  if (error) {
+    console.error('[auto-pilot] Gagal membuat notifikasi:', error);
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
@@ -416,6 +432,18 @@ export default async function handler(req, res) {
       throw new Error(`Gagal memperbarui last_auto_pilot_at: ${updateStudentError.message}`);
     }
 
+    // Kirim notifikasi in-app ke parent
+    await createNotification({
+      parentId,
+      studentId,
+      title: 'Auto-Pilot Telah Dijalankan',
+      message: `Auto-Pilot telah membuat tugas remedial untuk ${student.student_name} dengan total 15 soal. Cek dashboard siswa untuk detail.`,
+      type: 'auto_pilot',
+    });
+
+    // (Opsional) Kirim email notifikasi ke parent
+    // Untuk MVP, cukup notifikasi in-app. Email bisa ditambahkan nanti.
+
     return res.status(200).json({
       success: true,
       message: 'Auto-Pilot berhasil dijalankan',
@@ -423,6 +451,7 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Terjadi kesalahan pada server';
+    console.error('[auto-pilot] Error:', error);
     return res.status(500).json({ success: false, message });
   }
 }
