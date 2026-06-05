@@ -7,12 +7,18 @@ import Link from 'next/link';
 // ─────────────────────────────────────────────
 const REDEMPTION_COST = 179;
 const MIN_WITHDRAWAL = 100;
+const POINTS_TO_RUPIAH = 1000; // 1 poin = Rp1.000
 
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
 function formatPoints(value) {
   return Number(value || 0).toLocaleString('id-ID');
+}
+
+function formatRupiah(points) {
+  const rupiah = Number(points || 0) * POINTS_TO_RUPIAH;
+  return `Rp${rupiah.toLocaleString('id-ID')}`;
 }
 
 function formatDate(iso) {
@@ -175,18 +181,18 @@ export default function AffiliatePage() {
     const bank   = String(wBank || '').trim();
 
     if (!amount || amount < MIN_WITHDRAWAL) {
-      setWError(`Jumlah minimal penarikan adalah ${MIN_WITHDRAWAL} poin.`);
+      setWError(`Jumlah minimal penarikan adalah ${MIN_WITHDRAWAL} poin (≈ ${formatRupiah(MIN_WITHDRAWAL)}).`);
       return;
     }
 
     const balance = Number(info?.reward_points ?? 0);
     if (amount > balance) {
-      setWError(`Saldo tidak cukup. Saldo Anda: ${formatPoints(balance)} poin.`);
+      setWError(`Saldo tidak cukup. Saldo Anda: ${formatPoints(balance)} poin (≈ ${formatRupiah(balance)}).`);
       return;
     }
 
     const confirmed = window.confirm(
-      `Tarik ${formatPoints(amount)} poin ke:\n"${bank || '(rekening belum diisi)'}"\n\nLanjutkan?`
+      `Tarik ${formatPoints(amount)} poin (≈ ${formatRupiah(amount)}) ke:\n"${bank || '(rekening belum diisi)'}"\n\nLanjutkan?`
     );
     if (!confirmed) return;
 
@@ -207,7 +213,7 @@ export default function AffiliatePage() {
       }
 
       setWSuccess(
-        `Klaim penarikan ${formatPoints(amount)} poin berhasil dibuat. Admin akan memproses dalam 1–3 hari kerja.`
+        `Klaim penarikan ${formatPoints(amount)} poin (≈ ${formatRupiah(amount)}) berhasil dibuat. Admin akan memproses dalam 1–3 hari kerja.`
       );
       setWAmount('');
       setWBank('');
@@ -227,7 +233,7 @@ export default function AffiliatePage() {
     const balance = Number(info?.reward_points ?? 0);
 
     if (balance < REDEMPTION_COST) {
-      setRError(`Saldo tidak cukup. Dibutuhkan ${REDEMPTION_COST} poin, saldo Anda: ${formatPoints(balance)}.`);
+      setRError(`Saldo tidak cukup. Dibutuhkan ${REDEMPTION_COST} poin, saldo Anda: ${formatPoints(balance)} (≈ ${formatRupiah(balance)}).`);
       return;
     }
 
@@ -351,7 +357,9 @@ export default function AffiliatePage() {
                 {/* Saldo poin */}
                 <StatTile label="Saldo Poin">
                   <p className="text-3xl font-bold text-slate-900">{formatPoints(balance)}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">poin tersedia</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    ≈ {formatRupiah(balance)} &nbsp;|&nbsp; 1 poin = Rp{POINTS_TO_RUPIAH.toLocaleString('id-ID')}
+                  </p>
                 </StatTile>
 
                 {/* Total referral */}
@@ -379,11 +387,12 @@ export default function AffiliatePage() {
                 </p>
                 <p className="mt-2 text-sm text-white/80">
                   Bagikan kode referral Anda ke teman, dan dapatkan poin saat mereka aktif berlangganan.
-                  Poin bisa ditarik sebagai uang tunai atau ditukar paket.
+                  Poin bisa ditarik sebagai uang tunai (1 poin = Rp{POINTS_TO_RUPIAH.toLocaleString('id-ID')}) 
+                  atau ditukar paket.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-3">
                   <div className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/20">
-                    🏦 Tarik Tunai: min. {formatPoints(MIN_WITHDRAWAL)} poin
+                    🏦 Tarik Tunai: min. {formatPoints(MIN_WITHDRAWAL)} poin ≈ {formatRupiah(MIN_WITHDRAWAL)}
                   </div>
                   <div className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/20">
                     🎓 Tukar Paket: {REDEMPTION_COST} poin = +1 bulan
@@ -399,7 +408,7 @@ export default function AffiliatePage() {
                     {info.pending_withdrawal?.count > 0 && (
                       <p>
                         • {info.pending_withdrawal.count} penarikan tunai (
-                        {formatPoints(info.pending_withdrawal.total_points)} poin) menunggu persetujuan admin.
+                        {formatPoints(info.pending_withdrawal.total_points)} poin ≈ {formatRupiah(info.pending_withdrawal.total_points)}) menunggu persetujuan admin.
                       </p>
                     )}
                     {info.pending_redemption?.count > 0 && (
@@ -426,12 +435,12 @@ export default function AffiliatePage() {
                   <h2 className="text-base font-bold text-slate-900">💸 Tarik Cuan</h2>
                   <p className="mt-1 text-sm text-slate-600">
                     Konversi poin jadi uang tunai ke rekening Anda.
-                    Minimal {formatPoints(MIN_WITHDRAWAL)} poin.
+                    Minimal {formatPoints(MIN_WITHDRAWAL)} poin (≈ {formatRupiah(MIN_WITHDRAWAL)}).
                   </p>
 
                   {!canWithdraw && (
                     <p className="mt-3 text-xs text-slate-500">
-                      Kumpulkan lebih banyak poin terlebih dahulu.
+                      Kumpulkan lebih banyak poin terlebih dahulu. 1 poin = Rp{POINTS_TO_RUPIAH.toLocaleString('id-ID')}.
                     </p>
                   )}
 
@@ -462,11 +471,11 @@ export default function AffiliatePage() {
                           inputMode="numeric"
                           value={wAmount}
                           onChange={(e) => setWAmount(e.target.value.replace(/\D/g, ''))}
-                          placeholder={`Min. ${MIN_WITHDRAWAL}`}
+                          placeholder={`Min. ${MIN_WITHDRAWAL} (≈ ${formatRupiah(MIN_WITHDRAWAL)})`}
                           className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-sky-500"
                         />
                         <p className="mt-0.5 text-xs text-slate-500">
-                          Saldo: <span className="font-semibold">{formatPoints(balance)}</span> poin
+                          Saldo: <span className="font-semibold">{formatPoints(balance)}</span> poin (≈ {formatRupiah(balance)})
                         </p>
                       </div>
                       <div>
@@ -594,17 +603,17 @@ export default function AffiliatePage() {
                             <tr key={tx.id} className="hover:bg-slate-50">
                               <td className="py-3 pr-4 text-slate-600 whitespace-nowrap">
                                 {formatDate(tx.created_at)}
-                              </td>
+                               </td>
                               <td className="py-3 pr-4">
                                 <span
                                   className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${txTypeColor(tx.type)}`}
                                 >
                                   {txTypeLabel(tx.type)}
                                 </span>
-                              </td>
+                               </td>
                               <td className="py-3 pr-4 text-slate-600">
                                 {tx.note || '—'}
-                              </td>
+                               </td>
                               <td
                                 className={`py-3 text-right font-bold ${
                                   isCredit ? 'text-emerald-600' : 'text-rose-600'
@@ -612,8 +621,8 @@ export default function AffiliatePage() {
                               >
                                 {isCredit ? '+' : ''}
                                 {formatPoints(tx.amount)}
-                              </td>
-                            </tr>
+                               </td>
+                             </tr>
                           );
                         })}
                       </tbody>
