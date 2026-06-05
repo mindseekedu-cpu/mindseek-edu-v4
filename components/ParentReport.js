@@ -177,11 +177,12 @@ function formatPercent(value) {
   return `${number.toFixed(2)}%`;
 }
 
-function formatTrend(value) {
+// PRD 8.1: Tren hanya ▲/▼ tanpa angka
+function formatTrendIcon(value) {
   const number = Number(value || 0);
-  if (number > 0) return `+${number.toFixed(2)}%`;
-  if (number < 0) return `${number.toFixed(2)}%`;
-  return '0.00%';
+  if (number > 0) return '▲';
+  if (number < 0) return '▼';
+  return '•'; // netral jika tidak berubah
 }
 
 function buildThirtyDayText(consistency30) {
@@ -433,7 +434,7 @@ export default function ParentReport({ studentId }) {
                     <td style={styles.td}>{item.dibantu}</td>
                     <td style={styles.td}>{item.perlu_dampingan}</td>
                     <td style={styles.td}>{formatPercent(item.kemandirian_percent)}</td>
-                    <td style={styles.td}>{formatTrend(item.tren)}</td>
+                    <td style={styles.td}>{formatTrendIcon(item.tren)}</td>
                   </tr>
                 ))}
               </tbody>
