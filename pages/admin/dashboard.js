@@ -15,6 +15,16 @@ function smallId(v) {
   return `${s.slice(0, 6)}…${s.slice(-4)}`;
 }
 
+function formatAction(action) {
+  const map = {
+    approve: "✅ Disetujui",
+    reject: "❌ Ditolak",
+    freeze: "🔒 Dibekukan",
+    unfreeze: "🔓 Dipulihkan",
+  };
+  return map[action] || action;
+}
+
 async function safeJson(res) {
   try {
     return await res.json();
@@ -26,25 +36,41 @@ async function safeJson(res) {
 export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [data, setData] = useState({ withdrawalClaims: [], redemptionClaims: [], parents: [], admin: null });
+  const [data, setData] = useState({ withdrawalClaims: [], redemptionClaims: [], parents: [], admin: null, logs: [] });
   const [busyKey, setBusyKey] = useState("");
   const [toast, setToast] = useState("");
 
   const withdrawalPending = useMemo(() => data.withdrawalClaims || [], [data.withdrawalClaims]);
   const redemptionPending = useMemo(() => data.redemptionClaims || [], [data.redemptionClaims]);
   const parents = useMemo(() => data.parents || [], [data.parents]);
+  const adminLogs = useMemo(() => data.logs || [], [data.logs]);
 
   async function load() {
     setLoading(true);
     setError("");
     try {
+      // Load main data
       const res = await fetch("/api/admin/data", { method: "GET", credentials: "include" });
       const json = await safeJson(res);
       if (!res.ok || !json?.success) {
         setError(json?.message || "Gagal memuat data admin.");
         return;
       }
-      setData(json.data);
+      
+      let logs = [];
+      // Try to fetch logs separately (optional, if endpoint exists)
+      try {
+        const logsRes = await fetch("/api/admin/logs", { method: "GET", credentials: "include" });
+        const logsJson = await safeJson(logsRes);
+        if (logsRes.ok && logsJson?.success && Array.isArray(logsJson.data)) {
+          logs = logsJson.data;
+        }
+      } catch (logsErr) {
+        // Logs endpoint might not exist yet, ignore
+        console.warn("Logs endpoint not available", logsErr);
+      }
+
+      setData({ ...json.data, logs });
     } catch (e) {
       setError("Terjadi kesalahan jaringan saat memuat data.");
     } finally {
@@ -336,10 +362,67 @@ export default function AdminDashboardPage() {
                   </table>
                 </div>
               )}
+            </div>
+          </section>
 
+          {/* Admin Logs Section - PRD 13 & AC 17.7 */}
+          <section className="mt-4 rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-200 p-4">
+              <h2 className="text-lg font-semibold text-gray-900">Log Aktivitas Admin</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Riwayat aksi yang dilakukan oleh admin (approve, reject, freeze, unfreeze).
+              </p>
+            </div>
+            <div className="p-4">
+              {loading ? (
+                <div className="text-sm text-gray-600">Memuat...</div>
+              ) : adminLogs.length === 0 ? (
+                <div className="text-sm text-gray-600">Belum ada log aktivitas.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-gray-500">
+                        <th className="py-2 pr-3">Waktu</th>
+                        <th className="py-2 pr-3">Admin</th>
+                        <th className="py-2 pr-3">Aksi</th>
+                        <th className="py-2 pr-3">Target ID</th>
+                        <th className="py-2">Detail</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {adminLogs.map((log) => (
+                        <tr key={log.id}>
+                          <td className="py-2 pr-3 text-gray-700 whitespace-nowrap">{formatDate(log.created_at)}</td>
+                          <td className="py-2 pr-3 font-mono text-xs text-gray-700">{smallId(log.admin_id)}</td>
+                          <td className="py-2 pr-3">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                              log.action === 'approve' ? 'bg-green-100 text-green-800' :
+                              log.action === 'reject' ? 'bg-red-100 text-red-800' :
+                              log.action === 'freeze' ? 'bg-orange-100 text-orange-800' :
+                              log.action === 'unfreeze' ? 'bg-blue-100 text-blue-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {formatAction(log.action)}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 font-mono text-xs text-gray-700">{smallId(log.target_id)}</td>
+                          <td className="py-2 pr-3 text-gray-700 max-w-md truncate">
+                            {log.details ? (
+                              <details className="text-xs">
+                                <summary className="cursor-pointer text-blue-600">Lihat detail</summary>
+                                <pre className="mt-1 whitespace-pre-wrap text-gray-600">{JSON.stringify(log.details, null, 2)}</pre>
+                              </details>
+                            ) : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               <p className="mt-3 text-xs text-gray-500">
-                Catatan: Tombol aksi memanggil <span className="font-mono">/api/admin/process-claim</span> (Tugas 65).
-                Halaman ini memakai <span className="font-mono">/api/admin/data</span> untuk fetch data.
+                Log disimpan di tabel <span className="font-mono">admin_logs</span>. Aksi yang tercatat: approve, reject, freeze, unfreeze.
               </p>
             </div>
           </section>
