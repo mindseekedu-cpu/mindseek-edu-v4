@@ -50,28 +50,63 @@ export default async function handler(req, res) {
     const weekStartISO = getWeekStartISO(new Date())
     const createdAt = new Date().toISOString()
 
+    // Cek apakah snapshot untuk minggu ini sudah ada (cegah duplikasi)
+    const { data: existingSnapshot, error: checkError } = await supabase
+      .from('weekly_leaderboard')
+      .select('id')
+      .eq('week_start', weekStartISO)
+      .limit(1)
+
+    if (checkError) {
+      throw new Error(`Gagal memeriksa snapshot existing: ${checkError.message}`)
+    }
+
+    if (existingSnapshot && existingSnapshot.length > 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'Snapshot untuk minggu ini sudah ada, lewati.',
+        inserted: 0,
+      })
+    }
+
+    // Ambil daftar grade dari siswa aktif (belum dihapus dan parent aktif)
     const { data: gradesData, error: gradesError } = await supabase
       .from('students_profile')
-      .select('grade')
+      .select(`
+        grade,
+        parent:parent_profile (
+          is_active
+        )
+      `)
       .is('deleted_at', null)
 
     if (gradesError) {
       throw new Error(`Gagal mengambil daftar grade: ${gradesError.message}`)
     }
 
+    // Filter grade hanya dari siswa dengan parent aktif
     const gradeSet = new Set()
     ;(gradesData || []).forEach((row) => {
+      const isParentActive = row.parent?.is_active !== false
       const g = String(row.grade || '').trim()
-      if (g) gradeSet.add(g)
+      if (g && isParentActive) gradeSet.add(g)
     })
 
     const grades = Array.from(gradeSet.values())
     let insertedRows = 0
 
     for (const grade of grades) {
+      // Ambil siswa aktif (belum dihapus, parent aktif)
       const { data: students, error: studentsError } = await supabase
         .from('students_profile')
-        .select('id, student_id, student_name')
+        .select(`
+          id,
+          student_id,
+          student_name,
+          parent:parent_profile (
+            is_active
+          )
+        `)
         .eq('grade', grade)
         .is('deleted_at', null)
 
@@ -79,14 +114,17 @@ export default async function handler(req, res) {
         throw new Error(`Gagal mengambil siswa grade ${grade}: ${studentsError.message}`)
       }
 
-      const studentRows = Array.isArray(students) ? students : []
-      if (studentRows.length === 0) {
+      // Filter hanya yang parent aktif
+      const activeStudents = (students || []).filter((s) => s.parent?.is_active !== false)
+
+      if (activeStudents.length === 0) {
         continue
       }
 
-      const studentIdList = studentRows.map((s) => s.id)
-      const studentMap = new Map(studentRows.map((s) => [String(s.id), s]))
+      const studentIdList = activeStudents.map((s) => s.id)
+      const studentMap = new Map(activeStudents.map((s) => [String(s.id), s]))
 
+      // Ambil aggregate XP dan jumlah soal 7 hari terakhir
       const { data: aggregates, error: aggError } = await supabase
         .from('question_logs')
         .select('student_id, total_xp:xp_earned.sum(), question_count:id.count()')
@@ -131,6 +169,7 @@ export default async function handler(req, res) {
         continue
       }
 
+      // Insert snapshot (tanpa conflict karena sudah dicek sebelumnya)
       const { error: insertError } = await supabase.from('weekly_leaderboard').insert(ranked)
 
       if (insertError) {
@@ -143,9 +182,11 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       inserted: insertedRows,
+      week_start: weekStartISO,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Terjadi kesalahan pada server'
+    console.error('[save-weekly-leaderboard] Error:', error)
     return res.status(500).json({
       success: false,
       message,
