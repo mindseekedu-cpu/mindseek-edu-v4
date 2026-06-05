@@ -17,6 +17,13 @@ function calculateXP(mode, clueUsedCount = 0, attempts = 1) {
   return Math.max(5, baseXp - cluePenalty - attemptPenalty)
 }
 
+function getTemperatureForMode(mode) {
+  const m = String(mode || '').toLowerCase()
+  if (m === 'exam') return 0.1
+  if (m === 'homework') return 0.4
+  return 0.5 // practice
+}
+
 // ============================================================
 // PROMPT MASTER FINAL – AI MI SOKRATIK (Gabungan Nilai Unik + Struktur Teknis)
 // ============================================================
@@ -28,7 +35,6 @@ function buildSystemPrompt({ student, subject, topic, grade, mode, curriculum, i
   const studentLearningStyle = learningStyle || student?.learning_style || 'Campuran'
   const studentAdditionalNotes = additionalNotes || student?.additional_notes || ''
 
-  // Mode-specific temperature & behavior
   let modeDesc = ''
   if (mode === 'exam') {
     modeDesc = `[MODE EXAM] Temperature 0.1 – BEKU, seperti kunci jawaban. TANPA clue. Respons: "✔ Benar" atau "✘ Salah. Jawaban yang benar adalah X." Fokus akurasi.`
@@ -105,13 +111,6 @@ Grade siswa: ${studentGrade}
 `.trim()
 }
 
-function getTemperatureForMode(mode) {
-  const m = String(mode || '').toLowerCase()
-  if (m === 'exam') return 0.1
-  if (m === 'homework') return 0.4
-  return 0.5 // practice
-}
-
 function buildMockResponse({ subject, topic, mode, questionText, grade }) {
   return `Hi! 🌸 Ai Mi di sini~ 💕 Ada yang bisa aku bantu?\n1️⃣ Ada PR? (tulis soal ya)\n2️⃣ Latihan soal 📚\n3️⃣ Roadmap belajar 🗺️\nPilih nomor berapa? 😊`
 }
@@ -152,25 +151,63 @@ async function generateDeepSeekResponse({ systemPrompt, userPrompt, mode }) {
   }
 }
 
+// ============================================================
+// CHAT HISTORY FUNCTIONS
+// ============================================================
+async function getChatHistory(sessionId, limit = 10) {
+  try {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('role, content, created_at')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+    if (error) {
+      console.warn('Failed to fetch chat history:', error);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.warn('Error fetching chat history:', err);
+    return [];
+  }
+}
+
+async function saveChatMessage(sessionId, role, content) {
+  try {
+    const { error } = await supabase
+      .from('chat_messages')
+      .insert({
+        session_id: sessionId,
+        role: role,
+        content: content,
+        created_at: new Date().toISOString(),
+      });
+    if (error) console.error('Failed to save chat message:', error);
+  } catch (err) {
+    console.error('Error saving chat message:', err);
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, message: 'Method not allowed' })
+    return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
   try {
-    const token = req.cookies?.student_token
-    if (!token) return res.status(401).json({ success: false, message: 'Unauthorized' })
+    const token = req.cookies?.student_token;
+    if (!token) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-    let payload
+    let payload;
     try {
-      const verified = await jwtVerify(token, JWT_SECRET)
-      payload = verified.payload
+      const verified = await jwtVerify(token, JWT_SECRET);
+      payload = verified.payload;
     } catch (error) {
-      return res.status(401).json({ success: false, message: 'Token tidak valid atau sudah kedaluwarsa' })
+      return res.status(401).json({ success: false, message: 'Token tidak valid atau sudah kedaluwarsa' });
     }
 
-    const studentId = payload?.id
-    if (!studentId) return res.status(401).json({ success: false, message: 'Payload token tidak valid' })
+    const studentId = payload?.id;
+    if (!studentId) return res.status(401).json({ success: false, message: 'Payload token tidak valid' });
 
     const {
       subject,
@@ -181,24 +218,28 @@ export default async function handler(req, res) {
       file = null,
       clueUsedCount = 0,
       attempts = 1,
-    } = req.body || {}
+    } = req.body || {};
 
-    const normalizedMode = String(mode || '').toLowerCase()
+    const normalizedMode = String(mode || '').toLowerCase();
     if (!subject || !topic || !grade || !normalizedMode || !questionText) {
-      return res.status(400).json({ success: false, message: 'subject, topic, grade, mode, dan questionText wajib diisi' })
+      return res.status(400).json({
+        success: false,
+        message: 'subject, topic, grade, mode, dan questionText wajib diisi',
+      });
     }
     if (!['homework', 'practice', 'exam'].includes(normalizedMode)) {
-      return res.status(400).json({ success: false, message: 'Mode harus homework, practice, atau exam' })
+      return res.status(400).json({ success: false, message: 'Mode harus homework, practice, atau exam' });
     }
 
+    // Ambil data profil siswa
     const { data: studentProfile, error: studentError } = await supabase
       .from('students_profile')
       .select('id, student_name, grade, curriculum, interests, learning_style, additional_notes, question_settings')
       .eq('id', studentId)
-      .single()
+      .single();
 
     if (studentError || !studentProfile) {
-      return res.status(404).json({ success: false, message: 'Profil siswa tidak ditemukan' })
+      return res.status(404).json({ success: false, message: 'Profil siswa tidak ditemukan' });
     }
 
     // Cari atau buat learning session
@@ -212,14 +253,14 @@ export default async function handler(req, res) {
       .eq('is_completed', false)
       .order('started_at', { ascending: false })
       .limit(1)
-      .maybeSingle()
+      .maybeSingle();
 
     if (sessionFindError) {
-      console.error('Find session error:', sessionFindError)
-      return res.status(500).json({ success: false, message: 'Gagal memeriksa session belajar' })
+      console.error('Find session error:', sessionFindError);
+      return res.status(500).json({ success: false, message: 'Gagal memeriksa session belajar' });
     }
 
-    let session = existingSession
+    let session = existingSession;
     if (!session) {
       const { data: newSession, error: createSessionError } = await supabase
         .from('learning_sessions')
@@ -233,15 +274,19 @@ export default async function handler(req, res) {
           total_xp_earned: 0,
         }])
         .select('id, total_xp_earned')
-        .single()
+        .single();
 
       if (createSessionError || !newSession) {
-        console.error('Create session error:', createSessionError)
-        return res.status(500).json({ success: false, message: 'Gagal membuat session belajar' })
+        console.error('Create session error:', createSessionError);
+        return res.status(500).json({ success: false, message: 'Gagal membuat session belajar' });
       }
-      session = newSession
+      session = newSession;
     }
 
+    // Ambil riwayat chat terbaru (5 pesan terakhir untuk konteks)
+    const history = await getChatHistory(session.id, 10);
+
+    // Bangun system prompt
     const systemPrompt = buildSystemPrompt({
       student: studentProfile,
       subject,
@@ -252,8 +297,9 @@ export default async function handler(req, res) {
       interests: studentProfile.interests,
       learningStyle: studentProfile.learning_style,
       additionalNotes: studentProfile.additional_notes,
-    })
+    });
 
+    // Build user prompt dengan instruksi tambahan
     const userPrompt = `
 Siswa bertanya:
 "${questionText}"
@@ -272,18 +318,59 @@ INSTRUKSI KHUSUS UNTUK AI:
 4. JANGAN langsung kasih soal tanpa dialog
 5. Akhiri respons dengan pertanyaan "Paham? 😊"
 6. Jika siswa 3x salah, tawarkan jeda
-    `.trim()
+    `.trim();
 
-    const aiResult = await generateDeepSeekResponse({ systemPrompt, userPrompt, mode: normalizedMode })
+    // Siapkan messages array dengan history
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...history.map(h => ({ role: h.role, content: h.content })),
+      { role: 'user', content: userPrompt },
+    ];
 
-    let needGuidance = false
-    if (clueUsedCount >= 3) {
-      const lower = aiResult.text.toLowerCase()
-      if (lower.includes('solusi') || lower.includes('jawaban') || lower.includes('berikut langkah')) needGuidance = true
+    // Panggil AI dengan history
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    const temperature = getTemperatureForMode(normalizedMode);
+    let aiResponseText = '';
+    let aiSource = 'deepseek';
+
+    if (!apiKey) {
+      aiResponseText = buildMockResponse({ mode: normalizedMode, questionText });
+      aiSource = 'mock';
+    } else {
+      try {
+        const response = await fetch('https://api.deepseek.com/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: 'deepseek-chat',
+            temperature,
+            messages,
+          }),
+        });
+        if (!response.ok) throw new Error('DeepSeek API error');
+        const result = await response.json();
+        aiResponseText = result?.choices?.[0]?.message?.content || buildMockResponse({ mode: normalizedMode, questionText });
+      } catch (error) {
+        console.error('DeepSeek request failed:', error);
+        aiResponseText = buildMockResponse({ mode: normalizedMode, questionText });
+        aiSource = 'mock';
+      }
     }
 
-    const xpEarned = calculateXP(normalizedMode, clueUsedCount, attempts)
+    // Simpan pesan user dan assistant ke chat_messages
+    await saveChatMessage(session.id, 'user', questionText);
+    await saveChatMessage(session.id, 'assistant', aiResponseText);
 
+    // Hitung XP dan need_guidance
+    let needGuidance = false;
+    if (clueUsedCount >= 3) {
+      const lower = aiResponseText.toLowerCase();
+      if (lower.includes('solusi') || lower.includes('jawaban') || lower.includes('berikut langkah')) needGuidance = true;
+    }
+
+    const xpEarned = calculateXP(normalizedMode, clueUsedCount, attempts);
+
+    // Simpan ke question_logs
     const { error: logError } = await supabase.from('question_logs').insert([{
       session_id: session.id,
       student_id: studentId,
@@ -291,32 +378,34 @@ INSTRUKSI KHUSUS UNTUK AI:
       clue_used_count: clueUsedCount,
       xp_earned: xpEarned,
       need_guidance: needGuidance,
-    }])
+    }]);
 
     if (logError) {
-      console.error('Question log insert error:', logError)
-      return res.status(500).json({ success: false, message: 'Gagal menyimpan log pertanyaan' })
+      console.error('Question log insert error:', logError);
+      return res.status(500).json({ success: false, message: 'Gagal menyimpan log pertanyaan' });
     }
 
-    const updatedSessionXp = (session?.total_xp_earned || 0) + xpEarned
-    await supabase.from('learning_sessions').update({ total_xp_earned: updatedSessionXp }).eq('id', session.id)
+    // Update session XP
+    const updatedSessionXp = (session?.total_xp_earned || 0) + xpEarned;
+    await supabase.from('learning_sessions').update({ total_xp_earned: updatedSessionXp }).eq('id', session.id);
 
-    const { data: xpRow } = await supabase.from('students_profile').select('total_xp').eq('id', studentId).maybeSingle()
-    const newTotalXp = (xpRow?.total_xp || 0) + xpEarned
-    await supabase.from('students_profile').update({ total_xp: newTotalXp }).eq('id', studentId)
+    // Update total_xp siswa
+    const { data: xpRow } = await supabase.from('students_profile').select('total_xp').eq('id', studentId).maybeSingle();
+    const newTotalXp = (xpRow?.total_xp || 0) + xpEarned;
+    await supabase.from('students_profile').update({ total_xp: newTotalXp }).eq('id', studentId);
 
     return res.status(200).json({
       success: true,
       data: {
         sessionId: session.id,
-        response: aiResult.text,
+        response: aiResponseText,
         xpEarned,
-        aiSource: aiResult.source,
+        aiSource,
         needGuidance,
       },
-    })
+    });
   } catch (error) {
-    console.error('Student chat error:', error)
-    return res.status(500).json({ success: false, message: 'Internal server error' })
+    console.error('Student chat error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 }
