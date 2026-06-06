@@ -5,7 +5,6 @@ import {
   PlusIcon, 
   ArrowUpIcon, 
   UserCircleIcon,
-  BookOpenIcon,
   SunIcon,
   MoonIcon,
   CameraIcon,
@@ -13,7 +12,9 @@ import {
   DocumentIcon,
   FireIcon,
   StarIcon,
-  ArrowRightOnRectangleIcon
+  ArrowRightOnRectangleIcon,
+  ChatBubbleLeftEllipsisIcon,
+  TrophyIcon
 } from '@heroicons/react/24/outline';
 
 export default function StudentDashboardPage() {
@@ -38,7 +39,7 @@ export default function StudentDashboardPage() {
   const inputRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Settings (persisted to localStorage)
+  // Settings (persisted)
   const [mode, setMode] = useState('homework');
   const [grade, setGrade] = useState('');
   const [curriculum, setCurriculum] = useState('Kurikulum Merdeka');
@@ -50,7 +51,10 @@ export default function StudentDashboardPage() {
   const [recentSessions, setRecentSessions] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
 
-  // Dark mode from system + localStorage
+  // Ambil nama depan siswa
+  const firstName = student?.name?.split(' ')[0] || 'Siswa';
+
+  // Dark mode
   useEffect(() => {
     const saved = localStorage.getItem('theme');
     const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -60,7 +64,7 @@ export default function StudentDashboardPage() {
     else document.documentElement.classList.remove('dark');
   }, []);
 
-  // Load preferences from localStorage
+  // Load preferences
   useEffect(() => {
     const savedMode = localStorage.getItem('student_mode');
     const savedGrade = localStorage.getItem('student_grade');
@@ -72,7 +76,6 @@ export default function StudentDashboardPage() {
     if (savedSubject) setSubject(savedSubject);
   }, []);
 
-  // Save preferences to localStorage
   useEffect(() => {
     localStorage.setItem('student_mode', mode);
     if (grade) localStorage.setItem('student_grade', grade);
@@ -136,7 +139,6 @@ export default function StudentDashboardPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -163,7 +165,6 @@ export default function StudentDashboardPage() {
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
-  // Streaming sendMessage
   const sendMessage = async () => {
     if (!inputText.trim()) return;
 
@@ -175,7 +176,6 @@ export default function StudentDashboardPage() {
     setChatLoading(true);
     setError('');
 
-    // Untuk mode Homework: tidak kirim grade & topic (biar AI fleksibel)
     const payload = {
       subject,
       mode,
@@ -258,6 +258,10 @@ export default function StudentDashboardPage() {
     }
   };
 
+  const showProfile = () => {
+    alert('Fitur profil siswa sedang dalam pengembangan. Nanti akan tampil detail lengkap.');
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center">
@@ -274,20 +278,26 @@ export default function StudentDashboardPage() {
       </Head>
 
       <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-200">
-        {/* Mobile overlay for sidebar */}
+        {/* Overlay untuk mobile saat sidebar terbuka */}
         {isMobile && sidebarOpen && (
           <div className="fixed inset-0 bg-black/40 z-20" onClick={() => setSidebarOpen(false)} />
         )}
 
-        {/* Top Bar – Gemini Style (tanpa dropdown subject) */}
+        {/* Top Bar – tanpa avatar, hanya hamburger, mode, dark mode */}
         <div className="fixed top-0 left-0 right-0 z-30 bg-white/70 dark:bg-gray-900/70 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">
           <div className="flex items-center justify-between px-4 py-3 max-w-7xl mx-auto">
             <div className="flex items-center gap-4">
+              {/* Tombol hamburger ☰ */}
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-2xl text-gray-700 dark:text-gray-200"
+              >
+                ☰
+              </button>
               {/* Logo */}
               <div className="text-xl font-bold text-blue-600 dark:text-blue-400">MindSeek</div>
               <div className="h-6 w-px bg-gray-200 dark:bg-gray-700" />
-              
-              {/* Mode Dropdown (satu-satunya dropdown di top bar) */}
+              {/* Mode Dropdown */}
               <select
                 value={mode}
                 onChange={(e) => setMode(e.target.value)}
@@ -300,15 +310,6 @@ export default function StudentDashboardPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              {/* Book icon to toggle sidebar (semua pengaturan ada di sini) */}
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
-                title="Pengaturan Belajar"
-              >
-                <BookOpenIcon className="w-5 h-5" />
-              </button>
-
               {/* Dark mode toggle */}
               <button
                 onClick={toggleDarkMode}
@@ -316,117 +317,87 @@ export default function StudentDashboardPage() {
               >
                 {darkMode ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
               </button>
-
-              {/* Avatar */}
-              <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">
-                {student?.name?.charAt(0) || 'S'}
-              </div>
+              {/* Avatar dihilangkan sesuai permintaan */}
             </div>
           </div>
         </div>
 
-        {/* Sidebar (Settings) - muncul dari kanan, berisi semua kontrol */}
+        {/* Sidebar Kiri – collapsible, berisi New Chat, Chat History, Leaderboard Widget, Profil bawah */}
         <aside
-          className={`fixed top-0 bottom-0 z-40 w-80 bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
-            sidebarOpen ? 'translate-x-0' : 'translate-x-full'
-          } right-0`}
+          className={`fixed top-0 left-0 bottom-0 z-40 w-80 bg-white dark:bg-gray-800 shadow-xl border-r border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
+            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
         >
           <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-white">Pengaturan Belajar</h2>
-            <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-white">Menu</h2>
+            <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-xl">
               ✕
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            {/* New Chat */}
+            <button
+              onClick={handleNewChat}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition"
+            >
+              <ChatBubbleLeftEllipsisIcon className="w-5 h-5" /> Obrolan Baru
+            </button>
+
+            {/* Chat History (Riwayat Chat) */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kurikulum</label>
-              <select
-                value={curriculum}
-                onChange={(e) => setCurriculum(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-              >
-                <option>Kurikulum Merdeka</option>
-                <option>Kurikulum 2013</option>
-                <option>Cambridge</option>
-                <option>IB</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Grade</label>
-              <select
-                value={grade}
-                onChange={(e) => setGrade(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-              >
-                {[...Array(12)].map((_, i) => (
-                  <option key={i+1}>{i+1}</option>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Riwayat Chat</h3>
+              <div className="space-y-1">
+                {recentSessions.slice(0, 10).map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => handleLoadSession(s.id)}
+                    className="w-full text-left px-3 py-2 rounded-lg text-base text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                  >
+                    <ChatBubbleLeftEllipsisIcon className="w-4 h-4" />
+                    <span className="truncate">{s.topic || 'Diskusi'}</span>
+                  </button>
                 ))}
-              </select>
+                {recentSessions.length === 0 && <p className="text-sm text-gray-400 px-3 py-2">Belum ada chat</p>}
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
-              <select
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-              >
-                <option>Matematika</option>
-                <option>Fisika</option>
-                <option>Biologi</option>
-                <option>Kimia</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Topic (Standar)</label>
-              <select
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-              >
-                <option value="">Pilih topik (opsional)</option>
-                <option>Penjumlahan</option>
-                <option>Pengurangan</option>
-                <option>Perkalian</option>
-                <option>Pembagian</option>
-                <option>Pecahan</option>
-                <option>Eksponen</option>
-                <option>Logaritma</option>
-                <option>Aljabar</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Other Topics</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={otherTopic}
-                  onChange={(e) => setOtherTopic(e.target.value)}
-                  placeholder="Tambah topik sendiri..."
-                  className="flex-1 px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                />
-                <button
-                  onClick={handleOtherTopicAdd}
-                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  +
+
+            {/* Leaderboard Widget */}
+            <div className="mt-auto pt-6">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">🏆 Leaderboard Minggu Ini</h3>
+                <button onClick={() => router.push('/student/leaderboard')} className="text-xs text-blue-600 hover:underline">
+                  Lihat selengkapnya
                 </button>
               </div>
-              {otherTopic && <p className="text-xs text-gray-500 mt-1">Tekan + untuk menambah</p>}
-            </div>
-          </div>
-          {/* Profile & XP di bawah sidebar (statis) */}
-          <div className="border-t border-gray-200 dark:border-gray-700 p-4">
-            <div className="flex items-center gap-3">
-              <UserCircleIcon className="w-10 h-10 text-gray-400" />
-              <div>
-                <p className="font-semibold text-gray-800 dark:text-white">{student?.name || 'Siswa'}</p>
-                <div className="flex gap-3 text-xs text-gray-500 dark:text-gray-400">
-                  <span>{student?.total_xp || 0} XP</span>
-                  <span><FireIcon className="w-3 h-3 inline" /> {student?.current_streak || 0}</span>
-                  <span><StarIcon className="w-3 h-3 inline" /> {student?.longest_streak || 0}</span>
-                </div>
+              <div className="space-y-2">
+                {leaderboard.map((item) => (
+                  <div key={item.rank} className="flex justify-between text-sm">
+                    <span className="text-gray-500 w-6">#{item.rank}</span>
+                    <span className="flex-1 text-gray-800 dark:text-gray-200 truncate">{item.name}</span>
+                    <span className="text-gray-600 dark:text-gray-400">{item.total_xp} XP</span>
+                  </div>
+                ))}
+                {leaderboard.length === 0 && <p className="text-xs text-gray-400">Belum ada data</p>}
               </div>
             </div>
+          </div>
+
+          {/* Profil & XP di bagian bawah sidebar, nama bisa diklik */}
+          <div className="border-t border-gray-200 dark:border-gray-700 p-4">
+            <button onClick={showProfile} className="w-full text-left">
+              <div className="flex items-center gap-3">
+                <UserCircleIcon className="w-10 h-10 text-gray-400" />
+                <div>
+                  <p className="font-semibold text-gray-800 dark:text-white">{student?.name || 'Siswa'}</p>
+                  <div className="flex gap-3 text-xs text-gray-500 dark:text-gray-400">
+                    <span>{student?.total_xp || 0} XP</span>
+                    <span><FireIcon className="w-3 h-3 inline" /> {student?.current_streak || 0}</span>
+                    <span><StarIcon className="w-3 h-3 inline" /> {student?.longest_streak || 0}</span>
+                  </div>
+                </div>
+              </div>
+            </button>
             <button
               onClick={handleLogout}
               className="mt-3 flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
@@ -436,7 +407,7 @@ export default function StudentDashboardPage() {
           </div>
         </aside>
 
-        {/* Main Chat Area – Borderless Gemini Style */}
+        {/* Main Chat Area */}
         <main className="pt-14">
           <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col min-h-[calc(100vh-56px)]">
             {/* Chat messages container */}
@@ -445,9 +416,9 @@ export default function StudentDashboardPage() {
                 <div className="flex flex-col items-center justify-center text-center space-y-4 min-h-[60vh]">
                   <div className="text-7xl font-bold text-blue-600">🧠</div>
                   <h2 className="text-3xl md:text-4xl font-light text-gray-800 dark:text-gray-100">
-                    Mulai belajar, {student?.name || 'Siswa'}.
+                    Mulai belajar, {firstName}.
                   </h2>
-                  <p className="text-base md:text-lg text-gray-500 dark:text-gray-400">Siap membantu</p>
+                  <p className="text-base md:text-lg text-gray-500 dark:text-gray-400">Ai Mi siap membantu</p>
                 </div>
               ) : (
                 <>
@@ -507,7 +478,7 @@ export default function StudentDashboardPage() {
                       sendMessage();
                     }
                   }}
-                  placeholder="Tanyakan soalmu dan dapatkan bantuan langkah demi langkah..."
+                  placeholder="Tulis atau upload soalmu ..."
                   rows={1}
                   className="flex-1 py-3 px-2 bg-transparent outline-none resize-none overflow-y-auto max-h-32 text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                 />
