@@ -86,15 +86,17 @@ export default function StudentDashboardPage() {
     if (subject) localStorage.setItem('student_subject', subject);
   }, [mode, grade, curriculum, subject]);
 
-  // Responsive sidebar
+  // ========== PERBAIKAN 1: Responsive sidebar ==========
   useEffect(() => {
     const check = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
       if (!mobile) {
-        setLeftSidebarOpen(false);
+        // Desktop: sidebar kiri terbuka, kanan tertutup
+        setLeftSidebarOpen(true);
         setRightSidebarOpen(false);
       } else {
+        // Mobile: keduanya tertutup
         setLeftSidebarOpen(false);
         setRightSidebarOpen(false);
       }
@@ -103,6 +105,7 @@ export default function StudentDashboardPage() {
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+  // =============================================
 
   // Tutup popup upload saat klik di luar
   useEffect(() => {
@@ -289,7 +292,7 @@ export default function StudentDashboardPage() {
           <div className="fixed inset-0 bg-black/40 z-20" onClick={() => setRightSidebarOpen(false)} />
         )}
 
-        {/* Top Bar – tanpa dark mode toggle */}
+        {/* Top Bar */}
         <div className="fixed top-0 left-0 right-0 z-30 bg-white/70 dark:bg-gray-900/70 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">
           <div className="flex items-center justify-between px-4 py-3 max-w-7xl mx-auto">
             <div className="flex items-center gap-4">
@@ -324,7 +327,7 @@ export default function StudentDashboardPage() {
           </div>
         </div>
 
-        {/* SIDEBAR KIRI – navigasi + leaderboard di bawah (statis) */}
+        {/* SIDEBAR KIRI */}
         <aside
           className={`fixed top-0 left-0 bottom-0 z-40 w-80 bg-white dark:bg-gray-800 shadow-xl border-r border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
             leftSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -342,7 +345,6 @@ export default function StudentDashboardPage() {
 
           <div className="flex-1 overflow-y-auto">
             <div className="p-4 space-y-6">
-              {/* New Chat */}
               <button
                 onClick={handleNewChat}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition"
@@ -350,7 +352,6 @@ export default function StudentDashboardPage() {
                 <ChatBubbleLeftEllipsisIcon className="w-5 h-5" /> Obrolan Baru
               </button>
 
-              {/* Chat History */}
               <div>
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Riwayat Chat</h3>
                 <div className="space-y-1">
@@ -370,7 +371,6 @@ export default function StudentDashboardPage() {
             </div>
           </div>
 
-          {/* Leaderboard Widget – DITEMPATKAN DI BAWAH (statis) menggunakan mt-auto */}
           <div className="mt-auto p-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">🏆 Leaderboard Minggu Ini</h3>
@@ -391,10 +391,10 @@ export default function StudentDashboardPage() {
           </div>
         </aside>
 
-        {/* SIDEBAR KANAN – pengaturan + profil + logout */}
+        {/* ========== PERBAIKAN 2: Sidebar kanan (translate-x-full) ========== */}
         <aside
           className={`fixed top-0 right-0 bottom-0 z-40 w-80 bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
-            rightSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+            rightSidebarOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
         >
           <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
@@ -505,6 +505,7 @@ export default function StudentDashboardPage() {
             </button>
           </div>
         </aside>
+        {/* =========================================== */}
 
         {/* Main Chat Area */}
         <main className="pt-14">
@@ -567,7 +568,7 @@ export default function StudentDashboardPage() {
                   ref={textareaRef}
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  // onKeyDown dihapus agar Enter membuat baris baru, tidak mengirim
+                  // Tidak ada onKeyDown → Enter = baris baru
                   placeholder="Tulis atau upload soalmu ..."
                   rows={1}
                   className="flex-1 py-3 px-2 bg-transparent outline-none resize-none overflow-y-auto max-h-32 text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
