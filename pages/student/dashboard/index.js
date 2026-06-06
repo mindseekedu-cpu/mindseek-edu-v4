@@ -373,14 +373,6 @@ export default function StudentDashboardPage() {
 
           <div className="flex-1 overflow-y-auto">
             <div className="p-4 space-y-4">
-              {/* New Chat */}
-              <button
-                onClick={handleNewChat}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition"
-              >
-                <ChatBubbleLeftEllipsisIcon className="w-5 h-5" /> Obrolan Baru
-              </button>
-
               {/* Tugas Remedial dengan badge */}
               <button
                 onClick={() => alert('Fitur Tugas Remedial akan segera hadir')}
@@ -394,6 +386,14 @@ export default function StudentDashboardPage() {
                     {pendingCounts.pendingRemedial}
                   </span>
                 )}
+              </button>
+                
+              {/* New Chat */}
+              <button
+                onClick={handleNewChat}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition"
+              >
+                <ChatBubbleLeftEllipsisIcon className="w-5 h-5" /> Obrolan Baru
               </button>
 
               {/* Chat History */}
@@ -562,7 +562,7 @@ export default function StudentDashboardPage() {
                   <h2 className="text-3xl md:text-4xl font-light text-gray-800 dark:text-gray-100">
                     Mulai belajar, {firstName}.
                   </h2>
-                  <p className="text-base md:text-lg text-gray-500 dark:text-gray-400">Ai Mi siap membantu</p>
+                  <p className="text-base md:text-lg text-gray-500 dark:text-gray-400">Ai Mi (彭爱米)" siap membantu</p>
                 </div>
               ) : (
                 <>
