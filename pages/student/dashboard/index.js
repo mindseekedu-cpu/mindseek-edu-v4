@@ -539,7 +539,7 @@ export default function StudentDashboardPage() {
               )}
             </div>
 
-            {/* Floating Input Pill – tanpa onKeyDown sehingga Enter membuat baris baru */}
+            {/* Floating Input Pill */}
             <div className="relative mt-auto pt-4">
               <div className="flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full shadow-sm focus-within:shadow-md transition">
                 <div className="relative" ref={uploadPopupRef}>
@@ -567,7 +567,7 @@ export default function StudentDashboardPage() {
                   ref={textareaRef}
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  // Tidak ada onKeyDown, sehingga Enter akan membuat baris baru (default)
+                  // onKeyDown dihapus agar Enter membuat baris baru, tidak mengirim
                   placeholder="Tulis atau upload soalmu ..."
                   rows={1}
                   className="flex-1 py-3 px-2 bg-transparent outline-none resize-none overflow-y-auto max-h-32 text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
