@@ -28,6 +28,7 @@ export default function StudentDashboardPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [showUploadPopup, setShowUploadPopup] = useState(false);
   const uploadPopupRef = useRef(null);
+  const [pendingCounts, setPendingCounts] = useState({ total: 0, pendingDiscussions: 0, pendingRemedial: 0 });
 
   // Chat state
   const [activeSessionId, setActiveSessionId] = useState(null);
@@ -86,17 +87,15 @@ export default function StudentDashboardPage() {
     if (subject) localStorage.setItem('student_subject', subject);
   }, [mode, grade, curriculum, subject]);
 
-  // ========== PERBAIKAN 1: Responsive sidebar ==========
+  // Responsive sidebar
   useEffect(() => {
     const check = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
       if (!mobile) {
-        // Desktop: sidebar kiri terbuka, kanan tertutup
         setLeftSidebarOpen(true);
         setRightSidebarOpen(false);
       } else {
-        // Mobile: keduanya tertutup
         setLeftSidebarOpen(false);
         setRightSidebarOpen(false);
       }
@@ -105,7 +104,6 @@ export default function StudentDashboardPage() {
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
-  // =============================================
 
   // Tutup popup upload saat klik di luar
   useEffect(() => {
@@ -154,8 +152,28 @@ export default function StudentDashboardPage() {
     } catch (err) { console.error(err); }
   }, [grade]);
 
-  useEffect(() => { if (student) loadRecentSessions(); }, [student, loadRecentSessions]);
-  useEffect(() => { if (grade) loadLeaderboard(); }, [grade, loadLeaderboard]);
+  const fetchPendingCounts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/student/pending-counts', { credentials: 'include' });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setPendingCounts(json.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch pending counts', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (student) {
+      loadRecentSessions();
+      fetchPendingCounts();
+    }
+  }, [student, loadRecentSessions, fetchPendingCounts]);
+
+  useEffect(() => {
+    if (grade) loadLeaderboard();
+  }, [grade, loadLeaderboard]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -316,6 +334,16 @@ export default function StudentDashboardPage() {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Ikon Notifikasi 🔔 */}
+              <button className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300">
+                🔔
+                {pendingCounts.total > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {pendingCounts.total > 9 ? '9+' : pendingCounts.total}
+                  </span>
+                )}
+              </button>
+              {/* Ikon Buku */}
               <button
                 onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
                 className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
@@ -344,7 +372,8 @@ export default function StudentDashboardPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            <div className="p-4 space-y-6">
+            <div className="p-4 space-y-4">
+              {/* New Chat */}
               <button
                 onClick={handleNewChat}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition"
@@ -352,6 +381,22 @@ export default function StudentDashboardPage() {
                 <ChatBubbleLeftEllipsisIcon className="w-5 h-5" /> Obrolan Baru
               </button>
 
+              {/* Tugas Remedial dengan badge */}
+              <button
+                onClick={() => alert('Fitur Tugas Remedial akan segera hadir')}
+                className="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-base font-semibold text-gray-800 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-600 transition"
+              >
+                <span className="flex items-center gap-2">
+                  📝 Tugas Remedial
+                </span>
+                {pendingCounts.pendingRemedial > 0 && (
+                  <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
+                    {pendingCounts.pendingRemedial}
+                  </span>
+                )}
+              </button>
+
+              {/* Chat History */}
               <div>
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Riwayat Chat</h3>
                 <div className="space-y-1">
@@ -371,6 +416,7 @@ export default function StudentDashboardPage() {
             </div>
           </div>
 
+          {/* Leaderboard Widget */}
           <div className="mt-auto p-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">🏆 Leaderboard Minggu Ini</h3>
@@ -391,7 +437,7 @@ export default function StudentDashboardPage() {
           </div>
         </aside>
 
-        {/* ========== PERBAIKAN 2: Sidebar kanan (translate-x-full) ========== */}
+        {/* SIDEBAR KANAN */}
         <aside
           className={`fixed top-0 right-0 bottom-0 z-40 w-80 bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
             rightSidebarOpen ? 'translate-x-0' : 'translate-x-full'
@@ -505,7 +551,6 @@ export default function StudentDashboardPage() {
             </button>
           </div>
         </aside>
-        {/* =========================================== */}
 
         {/* Main Chat Area */}
         <main className="pt-14">
@@ -517,7 +562,7 @@ export default function StudentDashboardPage() {
                   <h2 className="text-3xl md:text-4xl font-light text-gray-800 dark:text-gray-100">
                     Mulai belajar, {firstName}.
                   </h2>
-                  <p className="text-base md:text-lg text-gray-500 dark:text-gray-400">"Ai Mi (彭爱米)" siap membantu</p>
+                  <p className="text-base md:text-lg text-gray-500 dark:text-gray-400">Ai Mi siap membantu</p>
                 </div>
               ) : (
                 <>
@@ -568,7 +613,6 @@ export default function StudentDashboardPage() {
                   ref={textareaRef}
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  // Tidak ada onKeyDown → Enter = baris baru
                   placeholder="Tulis atau upload soalmu ..."
                   rows={1}
                   className="flex-1 py-3 px-2 bg-transparent outline-none resize-none overflow-y-auto max-h-32 text-base text-gray-800 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
