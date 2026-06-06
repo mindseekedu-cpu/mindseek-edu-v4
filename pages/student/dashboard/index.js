@@ -6,8 +6,6 @@ import {
   ArrowUpIcon, 
   UserCircleIcon,
   BookOpenIcon,
-  SunIcon,
-  MoonIcon,
   CameraIcon,
   PhotoIcon,
   DocumentIcon,
@@ -23,7 +21,6 @@ export default function StudentDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // UI state
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -31,7 +28,6 @@ export default function StudentDashboardPage() {
   const [showUploadPopup, setShowUploadPopup] = useState(false);
   const uploadPopupRef = useRef(null);
 
-  // Chat state
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -41,7 +37,6 @@ export default function StudentDashboardPage() {
   const inputRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Settings
   const [mode, setMode] = useState('homework');
   const [grade, setGrade] = useState('');
   const [curriculum, setCurriculum] = useState('Kurikulum Merdeka');
@@ -49,13 +44,12 @@ export default function StudentDashboardPage() {
   const [topic, setTopic] = useState('');
   const [otherTopic, setOtherTopic] = useState('');
 
-  // Data API
   const [recentSessions, setRecentSessions] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
 
   const firstName = student?.name?.split(' ')[0] || 'Siswa';
 
-  // Dark mode otomatis mengikuti sistem (tanpa toggle)
+  // Dark mode otomatis dari sistem
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = (e) => {
@@ -69,7 +63,7 @@ export default function StudentDashboardPage() {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
-  // Load preferensi dari localStorage (tanpa dark mode)
+  // Load preferensi
   useEffect(() => {
     const savedMode = localStorage.getItem('student_mode');
     const savedGrade = localStorage.getItem('student_grade');
@@ -283,7 +277,7 @@ export default function StudentDashboardPage() {
       </Head>
 
       <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-200">
-        {/* Overlay untuk mobile */}
+        {/* Overlay mobile */}
         {isMobile && leftSidebarOpen && (
           <div className="fixed inset-0 bg-black/40 z-20" onClick={() => setLeftSidebarOpen(false)} />
         )}
@@ -291,7 +285,7 @@ export default function StudentDashboardPage() {
           <div className="fixed inset-0 bg-black/40 z-20" onClick={() => setRightSidebarOpen(false)} />
         )}
 
-        {/* Top Bar – tanpa dark mode toggle */}
+        {/* Top Bar */}
         <div className="fixed top-0 left-0 right-0 z-30 bg-white/70 dark:bg-gray-900/70 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">
           <div className="flex items-center justify-between px-4 py-3 max-w-7xl mx-auto">
             <div className="flex items-center gap-4">
@@ -322,12 +316,11 @@ export default function StudentDashboardPage() {
               >
                 <BookOpenIcon className="w-5 h-5" />
               </button>
-              {/* Dark mode toggle dihapus, otomatis dari sistem */}
             </div>
           </div>
         </div>
 
-        {/* SIDEBAR KIRI – navigasi (tanpa profil, leaderboard widget di bawah) */}
+        {/* SIDEBAR KIRI – navigasi (New Chat, Chat History, lalu leaderboard widget di bawah dengan mt-auto) */}
         <aside
           className={`fixed top-0 left-0 bottom-0 z-40 w-80 bg-white dark:bg-gray-800 shadow-xl border-r border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
             leftSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -335,12 +328,13 @@ export default function StudentDashboardPage() {
         >
           <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
             <h2 className="text-lg font-semibold text-gray-800 dark:text-white">Menu</h2>
-            <button onClick={() => setLeftSidebarOpen(false)} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-xl">
+            <button onClick={() => setLeftSidebarOpen(false)} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
               ✕
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          <div className="flex-1 overflow-y-auto p-4">
+            {/* New Chat */}
             <button
               onClick={handleNewChat}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-base font-semibold rounded-xl transition"
@@ -348,7 +342,8 @@ export default function StudentDashboardPage() {
               <ChatBubbleLeftEllipsisIcon className="w-5 h-5" /> Obrolan Baru
             </button>
 
-            <div>
+            {/* Chat History */}
+            <div className="mt-6">
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Riwayat Chat</h3>
               <div className="space-y-1">
                 {recentSessions.slice(0, 10).map((s) => (
@@ -365,8 +360,8 @@ export default function StudentDashboardPage() {
               </div>
             </div>
 
-            {/* Leaderboard Widget – diletakkan di bawah */}
-            <div>
+            {/* Leaderboard Widget – dipaksa ke bawah dengan mt-auto */}
+            <div className="mt-auto pt-6">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">🏆 Leaderboard Minggu Ini</h3>
                 <button onClick={() => router.push('/student/leaderboard')} className="text-xs text-blue-600 hover:underline">
@@ -385,19 +380,18 @@ export default function StudentDashboardPage() {
               </div>
             </div>
           </div>
-
-          {/* Profil di sidebar kiri dihapus (tidak ada lagi) */}
+          {/* Tidak ada profil di sidebar kiri */}
         </aside>
 
         {/* SIDEBAR KANAN – pengaturan + profil + logout */}
         <aside
           className={`fixed top-0 right-0 bottom-0 z-40 w-80 bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 transition-transform duration-300 flex flex-col ${
-            rightSidebarOpen ? 'translate-x-0' : 'translate-x-full'
+            rightSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
           <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
             <h2 className="text-lg font-semibold text-gray-800 dark:text-white">Pengaturan Belajar</h2>
-            <button onClick={() => setRightSidebarOpen(false)} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-xl">
+            <button onClick={() => setRightSidebarOpen(false)} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
               ✕
             </button>
           </div>
@@ -501,7 +495,7 @@ export default function StudentDashboardPage() {
           </div>
         </aside>
 
-        {/* Main Chat Area (sama seperti sebelumnya) */}
+        {/* Main Chat Area */}
         <main className="pt-14">
           <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col min-h-[calc(100vh-56px)]">
             <div className="flex-1 overflow-y-auto pb-6 space-y-8">
