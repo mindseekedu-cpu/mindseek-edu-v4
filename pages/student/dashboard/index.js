@@ -517,7 +517,7 @@ export default function StudentDashboardPage() {
                   <h2 className="text-3xl md:text-4xl font-light text-gray-800 dark:text-gray-100">
                     Mulai belajar, {firstName}.
                   </h2>
-                  <p className="text-base md:text-lg text-gray-500 dark:text-gray-400">Ai Mi siap membantu</p>
+                  <p className="text-base md:text-lg text-gray-500 dark:text-gray-400">"Ai Mi (彭爱米)" siap membantu</p>
                 </div>
               ) : (
                 <>
